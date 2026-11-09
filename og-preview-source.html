@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden;
+    background: linear-gradient(135deg, #070d1a 0%, #0f1f3d 50%, #070d1a 100%);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    width: 100%; height: 100%; padding: 60px 80px;
+    display: flex; align-items: center; gap: 60px;
+    position: relative; overflow: hidden;
+  }
+  /* Animated background circles */
+  .bg-circle {
+    position: absolute; border-radius: 50%;
+    background: radial-gradient(circle, rgba(2,132,199,0.15), transparent 70%);
+  }
+  .bg-circle.c1 { width: 500px; height: 500px; top: -150px; right: -100px; }
+  .bg-circle.c2 { width: 300px; height: 300px; bottom: -100px; left: 200px; }
+  .left {
+    flex: 1; z-index: 1;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(2,132,199,0.2); border: 1px solid rgba(2,132,199,0.4);
+    color: #38bdf8; padding: 6px 16px; border-radius: 50px;
+    font-size: 14px; font-weight: 600; letter-spacing: 0.5px;
+    margin-bottom: 24px;
+  }
+  .dot { width: 8px; height: 8px; background: #38bdf8; border-radius: 50%; }
+  h1 {
+    color: #fff; font-size: 52px; font-weight: 800;
+    line-height: 1.1; margin-bottom: 20px;
+  }
+  h1 span { color: #0284c7; }
+  p {
+    color: #94a3b8; font-size: 20px; line-height: 1.5;
+    margin-bottom: 32px; max-width: 500px;
+  }
+  .stats {
+    display: flex; gap: 32px;
+  }
+  .stat { text-align: center; }
+  .stat-num { color: #0284c7; font-size: 28px; font-weight: 700; }
+  .stat-label { color: #64748b; font-size: 13px; margin-top: 2px; }
+  .right {
+    display: flex; flex-direction: column; gap: 16px;
+    z-index: 1; min-width: 280px;
+  }
+  .pill {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px; padding: 16px 20px;
+    display: flex; align-items: center; gap: 14px;
+    color: #e2e8f0;
+  }
+  .pill-icon {
+    width: 42px; height: 42px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .pill-text { font-size: 15px; font-weight: 500; }
+  .pill-sub  { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .footer {
+    position: absolute; bottom: 30px; left: 80px; right: 80px;
+    display: flex; align-items: center; justify-content: space-between;
+    color: #475569; font-size: 13px;
+    border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;
+  }
+  .logo-row { display: flex; align-items: center; gap: 10px; }
+  .logo-box {
+    width: 32px; height: 32px; background: #0284c7; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 900; font-size: 18px;
+  }
+  .logo-name { color: #94a3b8; font-size: 16px; font-weight: 600; }
+  .logo-name span { color: #0284c7; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="bg-circle c1"></div>
+  <div class="bg-circle c2"></div>
+  <div class="left">
+    <div class="badge"><div class="dot"></div> Smart City Portal</div>
+    <h1>Report Problems.<br><span>Build Better Cities.</span></h1>
+    <p>File civic complaints, track resolution in real-time, and hold municipal departments accountable.</p>
+    <div class="stats">
+      <div class="stat"><div class="stat-num">9+</div><div class="stat-label">Categories</div></div>
+      <div class="stat"><div class="stat-num">24/7</div><div class="stat-label">Support</div></div>
+      <div class="stat"><div class="stat-num">Free</div><div class="stat-label">For Citizens</div></div>
+    </div>
+  </div>
+  <div class="right">
+    <div class="pill">
+      <div class="pill-icon" style="background:rgba(234,88,12,0.2);color:#fb923c">🛣️</div>
+      <div><div class="pill-text">Road Damage</div><div class="pill-sub">Potholes & broken roads</div></div>
+    </div>
+    <div class="pill">
+      <div class="pill-icon" style="background:rgba(5,150,105,0.2);color:#34d399">🗑️</div>
+      <div><div class="pill-text">Garbage & Waste</div><div class="pill-sub">Overflowing bins & littering</div></div>
+    </div>
+    <div class="pill">
+      <div class="pill-icon" style="background:rgba(234,179,8,0.2);color:#fbbf24">💡</div>
+      <div><div class="pill-text">Street Lighting</div><div class="pill-sub">Broken lights & open wiring</div></div>
+    </div>
+    <div class="pill">
+      <div class="pill-icon" style="background:rgba(2,132,199,0.2);color:#38bdf8">💧</div>
+      <div><div class="pill-text">Water Supply</div><div class="pill-sub">Pipeline bursts & dirty water</div></div>
+    </div>
+  </div>
+  <div class="footer">
+    <div class="logo-row">
+      <div class="logo-box">N</div>
+      <div class="logo-name">Nagar<span>Mitra</span></div>
+    </div>
+    <div>nagarmitra.pages.dev · Your City, Your Voice</div>
+  </div>
+</div>
+</body>
+</html>

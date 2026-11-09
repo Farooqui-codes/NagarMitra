@@ -23,6 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.1",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.4.0",
     "punycode": "^2.3.1",
     "xss": "^1.0.17"
   },

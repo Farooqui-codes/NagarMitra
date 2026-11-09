@@ -93,6 +93,18 @@ app.use('/api/auth/register', authLimiter);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '../')));
 
+// Explicit route for preview.png (WhatsApp/OG crawlers need fast 200 response)
+app.get('/preview.png', (req, res) => {
+    const previewPath = path.join(__dirname, '../preview.png');
+    if (fs.existsSync(previewPath)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.sendFile(previewPath);
+    } else {
+        // Fallback to logo if preview.png not generated yet
+        res.sendFile(path.join(__dirname, '../logo.png'));
+    }
+});
+
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/complaints', complaintCreateLimiter); // Apply complaint limiter before route
 app.use('/api/complaints', require('./routes/complaintRoutes'));

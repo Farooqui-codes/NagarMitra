@@ -1,7 +1,9 @@
 const xss = require('xss');
 const Complaint = require('../models/Complaint');
-const Counter = require('../models/Counter');
+const Counter   = require('../models/Counter');
 const { isDbConnected } = require('../config/db');
+const { sendEmail, authorityNotificationEmail, citizenConfirmationEmail } = require('../services/emailService');
+const { lookupAuthority } = require('../data/authorityEmails');
 
 // ─── XSS sanitization options (allow no HTML tags at all) ───────────────────
 const xssOptions = {
@@ -98,6 +100,37 @@ exports.createComplaint = async (req, res) => {
         }
 
         const complaint = await Complaint.create(complaintData);
+
+        // ── Send emails asynchronously (non-blocking — don't fail the response) ──
+        setImmediate(async () => {
+            try {
+                // Parse location fields from combined string for authority lookup
+                // Expected format: "Street, Area, City - Pincode, State, Country"
+                const locParts  = complaint.location.split(',').map(s => s.trim());
+                const cityPart  = locParts.find(p => /^[a-zA-Z\s]+$/.test(p) && p.length > 2 && !['India'].includes(p)) || '';
+                const pinMatch  = complaint.location.match(/\b(\d{6})\b/);
+                const pincode   = pinMatch ? pinMatch[1] : '';
+                // State is usually second-to-last before Country
+                const statePart = locParts.length >= 2 ? locParts[locParts.length - 2] : '';
+
+                const authority = lookupAuthority(cityPart, statePart, pincode);
+
+                // 1. Notify local authority
+                const authTpl = authorityNotificationEmail(complaint, authority);
+                await sendEmail({ to: authority.email, ...authTpl });
+                console.log(`📧 [Authority Email] → ${authority.email} (${authority.name}) | Match: ${authority.matchType}`);
+
+                // 2. Send citizen confirmation (only if email available)
+                if (complaint.citizenEmail) {
+                    const citizenTpl = citizenConfirmationEmail(complaint);
+                    await sendEmail({ to: complaint.citizenEmail, ...citizenTpl });
+                    console.log(`📧 [Citizen Email] → ${complaint.citizenEmail}`);
+                }
+            } catch (emailErr) {
+                console.error('❌ [Background Email Error]', emailErr.message);
+            }
+        });
+
         res.status(201).json({ success: true, data: complaint, complaint });
     } catch (error) {
         console.error('Create Complaint Error:', error);
