@@ -1,38 +1,40 @@
-const jwt = require('jsonwebtoken');
+const jwt  = require('jsonwebtoken');
 const User = require('../models/User');
 const { isDbConnected, connectDB } = require('../config/db');
 
-// Middleware to ensure database is available for DB-dependent operations
+// ─── DB availability guard middleware ──────────────────────────────────────────
 const checkDbReady = (req, res, next) => {
     if (!isDbConnected()) {
-        // Attempt background reconnect
-        connectDB();
+        connectDB(); // Attempt background reconnect
         return res.status(503).json({
             success: false,
-            error: 'DATABASE_UNAVAILABLE',
+            error:   'DATABASE_UNAVAILABLE',
             message: 'Database service is currently unavailable. Please try again shortly.'
         });
     }
     next();
 };
 
-// Protect routes - verifies JWT token
+// ─── Role normalizer (legacy compatibility) ───────────────────────────────────
+const normalizeRole = (role) =>
+    (role === 'citizen' || role === 'user') ? 'local_user' : role;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// protect — requires a valid JWT; blocks anonymous access
+// ─────────────────────────────────────────────────────────────────────────────
 const protect = async (req, res, next) => {
     let token;
 
-    if (
-        req.headers.authorization &&
-        req.headers.authorization.startsWith('Bearer')
-    ) {
+    if (req.headers.authorization?.startsWith('Bearer')) {
         token = req.headers.authorization.split(' ')[1];
-    } else if (req.query && req.query.token) {
+    } else if (req.query?.token) {
         token = req.query.token;
     }
 
     if (!token) {
         return res.status(401).json({
             success: false,
-            error: 'UNAUTHENTICATED',
+            error:   'UNAUTHENTICATED',
             message: 'Authentication required. Please sign in.'
         });
     }
@@ -41,59 +43,56 @@ const protect = async (req, res, next) => {
         connectDB();
         return res.status(503).json({
             success: false,
-            error: 'DATABASE_UNAVAILABLE',
+            error:   'DATABASE_UNAVAILABLE',
             message: 'Database is currently unavailable. Please try again shortly.'
         });
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-        const user = await User.findById(decoded.id).select('-password');
+        // JWT_SECRET is enforced at startup — no 'secret' fallback
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user    = await User.findById(decoded.id).select('-password');
+
         if (!user) {
             return res.status(401).json({
                 success: false,
-                error: 'USER_NOT_FOUND',
+                error:   'USER_NOT_FOUND',
                 message: 'Account associated with this session no longer exists.'
             });
         }
 
-        // Normalize legacy roles ('citizen', 'user') to 'local_user'
-        if (user.role === 'citizen' || user.role === 'user') {
-            user.role = 'local_user';
-        }
-
-        req.user = user;
+        user.role = normalizeRole(user.role);
+        req.user  = user;
         next();
     } catch (err) {
         return res.status(401).json({
             success: false,
-            error: 'TOKEN_INVALID',
+            error:   'TOKEN_INVALID',
             message: 'Session has expired or is invalid. Please sign in again.'
         });
     }
 };
 
-// Optional auth - if token is present and valid, attach user; else proceed as guest
+// ─────────────────────────────────────────────────────────────────────────────
+// optionalAuth — attaches user if valid token present; continues as guest if not
+// ─────────────────────────────────────────────────────────────────────────────
 const optionalAuth = async (req, res, next) => {
     let token;
-    if (
-        req.headers.authorization &&
-        req.headers.authorization.startsWith('Bearer')
-    ) {
+    if (req.headers.authorization?.startsWith('Bearer')) {
         token = req.headers.authorization.split(' ')[1];
     }
 
     if (token && isDbConnected()) {
         try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-            const user = await User.findById(decoded.id).select('-password');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const user    = await User.findById(decoded.id).select('-password');
             if (user) {
-                if (user.role === 'citizen' || user.role === 'user') {
-                    user.role = 'local_user';
-                }
-                req.user = user;
+                user.role = normalizeRole(user.role);
+                req.user  = user;
+            } else {
+                req.user = null;
             }
-        } catch (err) {
+        } catch {
             req.user = null;
         }
     } else {
@@ -102,34 +101,30 @@ const optionalAuth = async (req, res, next) => {
     next();
 };
 
-// Grant access to specific roles
-const authorize = (...roles) => {
-    return (req, res, next) => {
-        if (!req.user) {
-            return res.status(401).json({
-                success: false,
-                error: 'UNAUTHENTICATED',
-                message: 'Authentication required to access this resource.'
-            });
-        }
+// ─────────────────────────────────────────────────────────────────────────────
+// authorize — restricts route to specific roles (use after protect)
+// ─────────────────────────────────────────────────────────────────────────────
+const authorize = (...roles) => (req, res, next) => {
+    if (!req.user) {
+        return res.status(401).json({
+            success: false,
+            error:   'UNAUTHENTICATED',
+            message: 'Authentication required to access this resource.'
+        });
+    }
 
-        const effectiveRole = (req.user.role === 'citizen' || req.user.role === 'user')
-            ? 'local_user'
-            : req.user.role;
+    const effectiveRole = normalizeRole(req.user.role);
+    const allowed = roles.includes(effectiveRole) ||
+        (roles.includes('local_user') && (req.user.role === 'citizen' || req.user.role === 'user'));
 
-        const roleAllowed = roles.includes(effectiveRole) ||
-            (roles.includes('local_user') && (req.user.role === 'citizen' || req.user.role === 'user'));
-
-        if (!roleAllowed) {
-            return res.status(403).json({
-                success: false,
-                error: 'FORBIDDEN',
-                message: `Forbidden: role '${effectiveRole}' is not authorized to access this resource.`
-            });
-        }
-        next();
-    };
+    if (!allowed) {
+        return res.status(403).json({
+            success: false,
+            error:   'FORBIDDEN',
+            message: `Forbidden: role '${effectiveRole}' is not authorized to access this resource.`
+        });
+    }
+    next();
 };
 
 module.exports = { checkDbReady, protect, optionalAuth, authorize };
-

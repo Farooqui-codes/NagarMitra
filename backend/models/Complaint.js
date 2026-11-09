@@ -23,8 +23,8 @@ const complaintSchema = new mongoose.Schema({
     complaintId: {
         type: String,
         required: [true, 'Complaint ID is required'],
-        trim: true,
-        index: true
+        unique: true,       // Ensure absolute DB-level uniqueness
+        trim: true
     },
     category: {
         type: String,
@@ -47,6 +47,7 @@ const complaintSchema = new mongoose.Schema({
     },
     severity: {
         type: String,
+        enum: ['Low', 'Medium', 'High', 'Critical'],
         default: 'Medium'
     },
     department: {
@@ -55,13 +56,11 @@ const complaintSchema = new mongoose.Schema({
     },
     status: {
         type: String,
+        enum: ['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved', 'Rejected'],
         default: 'Submitted'
     },
+    // Unified image field — 'image' duplicate removed
     imageUrl: {
-        type: String,
-        default: ''
-    },
-    image: {
         type: String,
         default: ''
     },
@@ -98,5 +97,14 @@ const complaintSchema = new mongoose.Schema({
         default: Date.now
     }
 });
+
+// ─── Compound & single-field indexes for fast query performance ───
+// Note: complaintId already has a unique index via schema 'unique: true' — no duplicate needed
+complaintSchema.index({ status: 1 });               // Filter by status
+complaintSchema.index({ category: 1 });             // Filter by category
+complaintSchema.index({ user: 1 });                 // My complaints lookup
+complaintSchema.index({ citizenEmail: 1 });         // Email-based ownership check
+complaintSchema.index({ createdAt: -1 });           // Default newest-first sort
+complaintSchema.index({ upvotes: -1, createdAt: -1 }); // Sort by popular
 
 module.exports = mongoose.model('Complaint', complaintSchema);

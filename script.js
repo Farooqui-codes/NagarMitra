@@ -595,8 +595,17 @@ async function registerUser (event) {
     return
   }
 
-  if (password.length < 4) {
-    showToast('Password must be at least 4 characters', 'error')
+  // Password strength validation — matches backend rules
+  if (password.length < 8) {
+    showToast('Password must be at least 8 characters', 'error')
+    return
+  }
+  if (!/[A-Za-z]/.test(password)) {
+    showToast('Password must contain at least one letter', 'error')
+    return
+  }
+  if (!/[0-9]/.test(password)) {
+    showToast('Password must contain at least one number', 'error')
     return
   }
 
@@ -870,36 +879,131 @@ function previewImage (event) {
 }
 
 /* =========================
-   LOCATION (Multi-Tier GPS & Network Fallback)
+   LOCATION — Structured Multi-Field + GPS Auto-Fill
 ========================= */
+
+/**
+ * buildLocationString — combines all 6 address fields into one clean string
+ * Format: Street, Area, City - Pincode, State, Country
+ */
+function buildLocationString () {
+  const street  = (document.getElementById('locStreet')?.value  || '').trim()
+  const area    = (document.getElementById('locArea')?.value    || '').trim()
+  const city    = (document.getElementById('locCity')?.value    || '').trim()
+  const pincode = (document.getElementById('locPincode')?.value || '').trim()
+  const state   = (document.getElementById('locState')?.value   || '').trim()
+  const country = (document.getElementById('locCountry')?.value || 'India').trim()
+
+  // Build parts: "Street, Area, City - Pincode, State, Country"
+  let parts = []
+  if (street)  parts.push(street)
+  if (area)    parts.push(area)
+  if (city && pincode) parts.push(`${city} - ${pincode}`)
+  else if (city)       parts.push(city)
+  else if (pincode)    parts.push(pincode)
+  if (state)   parts.push(state)
+  if (country) parts.push(country)
+
+  return parts.join(', ')
+}
+
+/**
+ * syncLocationHiddenField — updates hidden #location field that the backend reads
+ * Called whenever any location sub-field changes
+ */
+function syncLocationHiddenField () {
+  const hidden = document.getElementById('location')
+  if (hidden) hidden.value = buildLocationString()
+  saveDraft()
+}
+
+// Attach live-sync to all location sub-fields
+function attachLocationFieldListeners () {
+  ['locStreet','locArea','locCity','locPincode','locState','locCountry'].forEach(id => {
+    const el = document.getElementById(id)
+    if (el) {
+      el.addEventListener('input',  syncLocationHiddenField)
+      el.addEventListener('change', syncLocationHiddenField)
+    }
+  })
+}
+
+/**
+ * reverseGeocodeCoords — calls BigDataCloud API and returns STRUCTURED address object
+ */
 async function reverseGeocodeCoords (lat, lon) {
   try {
-    const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`)
-    if (res.ok) {
-      const data = await res.json()
-      const admin = (data.localityInfo && Array.isArray(data.localityInfo.administrative)) ? data.localityInfo.administrative : []
+    const res = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const admin = Array.isArray(data.localityInfo?.administrative)
+      ? data.localityInfo.administrative : []
 
-      // Extract fine-grained local administrative units (wards, zones, subdistricts)
-      const localUnits = admin
-        .filter(a => a.adminLevel && a.adminLevel >= 8 && a.name)
-        .sort((a, b) => b.adminLevel - a.adminLevel)
-        .map(a => a.name)
+    // Fine local units — ward / sublocality (adminLevel >= 8)
+    const localUnits = admin
+      .filter(a => a.adminLevel >= 8 && a.name)
+      .sort((a, b) => b.adminLevel - a.adminLevel)
+      .map(a => a.name)
 
-      const suburb = data.locality || ''
-      const city = data.city || ''
-      const state = data.principalSubdivision || ''
-      const pincode = data.postcode || ''
-      const country = data.countryName || 'India'
-
-      const parts = [...localUnits.slice(0, 2), suburb, city, state, pincode, country].filter(Boolean)
-      const unique = parts.filter((item, idx) => parts.findIndex(p => p.toLowerCase() === item.toLowerCase()) === idx)
-
-      if (unique.length > 0) return unique.join(', ')
+    return {
+      street:  localUnits[0] || '',                     // finest ward/road unit
+      area:    localUnits[1] || data.locality || '',    // neighbourhood / locality
+      city:    data.city || '',
+      pincode: data.postcode || '',
+      state:   data.principalSubdivision || '',
+      country: data.countryName || 'India'
     }
   } catch (err) {
     console.warn('Reverse geocode error:', err)
+    return null
   }
-  return `Lat: ${Number(lat).toFixed(5)}, Lon: ${Number(lon).toFixed(5)}`
+}
+
+/**
+ * applyStructuredAddress — fills all 6 location fields from a structured object
+ * and auto-selects state from dropdown if matched
+ */
+function applyStructuredAddress (addr, infoText, isSuccess = true) {
+  if (!addr) return
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id)
+    if (el && val) el.value = val
+  }
+
+  setVal('locStreet',  addr.street)
+  setVal('locArea',    addr.area)
+  setVal('locCity',    addr.city)
+  setVal('locPincode', addr.pincode)
+  setVal('locCountry', addr.country || 'India')
+
+  // Try to match state dropdown
+  const stateEl = document.getElementById('locState')
+  if (stateEl && addr.state) {
+    const opts = Array.from(stateEl.options)
+    const match = opts.find(o => o.value.toLowerCase().includes(addr.state.toLowerCase()) ||
+                                 addr.state.toLowerCase().includes(o.value.toLowerCase()))
+    if (match) stateEl.value = match.value
+  }
+
+  // Sync hidden field + update UI badge
+  syncLocationHiddenField()
+
+  const coords = document.getElementById('coordinates')
+  if (coords) {
+    coords.className = isSuccess ? 'location-status-badge success' : 'location-status-badge warn'
+    const combined = buildLocationString()
+    coords.innerHTML = `<i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-info-circle'}"></i>
+      <strong>Location filled:</strong> ${escapeHTML(combined)}
+      <span class="loc-acc">(${escapeHTML(infoText)})</span>`
+  }
+
+  showToast(
+    isSuccess ? '📍 All address fields filled from GPS!' : '📍 Approximate location filled — please verify',
+    isSuccess ? 'success' : 'info'
+  )
 }
 
 async function fetchNetworkLocationFallback () {
@@ -908,10 +1012,13 @@ async function fetchNetworkLocationFallback () {
     if (res.ok) {
       const d = await res.json()
       if (d.success !== false) {
-        const parts = [d.city, d.region, d.postal, d.country].filter(Boolean)
-        const text = parts.join(', ')
         return {
-          address: text || `${d.city || ''}, ${d.region || ''}`,
+          city:    d.city    || '',
+          state:   d.region  || '',
+          pincode: d.postal  || '',
+          country: d.country || 'India',
+          street:  '',
+          area:    '',
           lat: d.latitude,
           lon: d.longitude,
           source: 'Network'
@@ -926,7 +1033,6 @@ async function fetchNetworkLocationFallback () {
 
 function getLocation () {
   const coords = document.getElementById('coordinates')
-  const locationInput = document.getElementById('location')
   const locationButton = document.querySelector('.location-btn')
 
   if (locationButton) {
@@ -938,86 +1044,64 @@ function getLocation () {
     coords.innerHTML = '<i class="fas fa-satellite-dish fa-spin"></i> Requesting GPS / Device Location...'
   }
 
-  const applyLocation = (resolvedAddress, infoText, isSuccess = true) => {
-    if (locationInput && resolvedAddress) {
-      locationInput.value = resolvedAddress
-      saveDraft()
-    }
-    if (coords) {
-      coords.className = isSuccess ? 'location-status-badge success' : 'location-status-badge warn'
-      coords.innerHTML = `<i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-info-circle'}"></i> <strong>Location:</strong> ${escapeHTML(resolvedAddress)} <span class="loc-acc">(${escapeHTML(infoText)})</span>`
-    }
+  const resetBtn = () => {
     if (locationButton) {
       locationButton.disabled = false
-      locationButton.innerHTML = '<i class="fas fa-crosshairs"></i> Use My Current Location'
+      locationButton.innerHTML = '<i class="fas fa-crosshairs"></i> Auto-Fill My Current Location'
     }
-    showToast(isSuccess ? 'Location detected successfully!' : 'Approximate location detected', isSuccess ? 'success' : 'info')
   }
 
   const handleFallback = async (reason) => {
-    if (coords) {
-      coords.innerHTML = '<i class="fas fa-network-wired fa-spin"></i> Detecting network location fallback...'
-    }
+    if (coords) coords.innerHTML = '<i class="fas fa-network-wired fa-spin"></i> Trying network location...'
     const netLoc = await fetchNetworkLocationFallback()
-    if (netLoc && netLoc.address) {
-      let finalAddr = netLoc.address
+    if (netLoc) {
+      // Try fine geocode from IP coords
       if (netLoc.lat && netLoc.lon) {
         const fine = await reverseGeocodeCoords(netLoc.lat, netLoc.lon)
-        if (fine && !fine.startsWith('Lat:')) finalAddr = fine
+        if (fine) { applyStructuredAddress(fine, 'Network detected — verify street details', false); resetBtn(); return }
       }
-      applyLocation(finalAddr, 'Network detected — please refine street details', false)
+      applyStructuredAddress(netLoc, 'Network detected — verify street details', false)
     } else {
       if (coords) {
         coords.className = 'location-status-badge error'
-        coords.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${escapeHTML(reason || 'Could not auto-detect location.')} Please enter address manually.`
+        coords.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${escapeHTML(reason || 'Could not auto-detect.')} Please type address manually.`
       }
-      if (locationButton) {
-        locationButton.disabled = false
-        locationButton.innerHTML = '<i class="fas fa-crosshairs"></i> Use My Current Location'
-      }
-      showToast('Could not fetch GPS. Please type address manually.', 'error')
+      showToast('Could not fetch GPS. Please fill address manually.', 'error')
     }
+    resetBtn()
   }
 
-  if (!navigator.geolocation) {
-    handleFallback('Geolocation not supported by your browser.')
-    return
-  }
+  if (!navigator.geolocation) { handleFallback('Geolocation not supported by your browser.'); return }
 
-  // Tier 1: Fast High-Accuracy GPS (7s timeout)
+  // Tier 1 — High-accuracy GPS (7s)
   navigator.geolocation.getCurrentPosition(
     async pos => {
-      const lat = pos.coords.latitude
-      const lon = pos.coords.longitude
-      const acc = Math.round(pos.coords.accuracy || 0)
+      const { latitude: lat, longitude: lon, accuracy } = pos.coords
+      const acc = Math.round(accuracy || 0)
+      if (coords) coords.innerHTML = `<i class="fas fa-map-pin fa-spin"></i> Resolving address (±${acc}m)...`
 
-      if (coords) {
-        coords.innerHTML = `<i class="fas fa-map-pin fa-spin"></i> Resolving address (±${acc}m accuracy)...`
-      }
-
-      const address = await reverseGeocodeCoords(lat, lon)
-      applyLocation(address, `GPS Accuracy: ±${acc}m`, true)
+      const addr = await reverseGeocodeCoords(lat, lon)
+      if (addr) applyStructuredAddress(addr, `GPS ±${acc}m`, true)
+      else      handleFallback('Could not resolve address from GPS.')
+      resetBtn()
     },
     err => {
-      console.warn('GPS initial attempt error code:', err.code, err.message)
-      // Tier 2: Low-accuracy / Wi-Fi triangulation fallback
+      console.warn('GPS Tier-1 error:', err.code, err.message)
       if (err.code === 2 || err.code === 3) {
+        // Tier 2 — Wi-Fi / low-accuracy
         navigator.geolocation.getCurrentPosition(
           async pos2 => {
-            const lat = pos2.coords.latitude
-            const lon = pos2.coords.longitude
-            const acc = Math.round(pos2.coords.accuracy || 0)
-            const address = await reverseGeocodeCoords(lat, lon)
-            applyLocation(address, `Accuracy: ±${acc}m`, true)
+            const { latitude: lat, longitude: lon, accuracy } = pos2.coords
+            const acc = Math.round(accuracy || 0)
+            const addr = await reverseGeocodeCoords(lat, lon)
+            if (addr) applyStructuredAddress(addr, `Approx ±${acc}m`, true)
+            else      handleFallback('Could not resolve low-accuracy GPS.')
+            resetBtn()
           },
-          () => {
-            // Tier 3: Network IP Fallback
-            handleFallback(err.code === 3 ? 'GPS request timed out.' : 'GPS signal unavailable.')
-          },
+          () => handleFallback(err.code === 3 ? 'GPS timed out.' : 'GPS signal unavailable.'),
           { enableHighAccuracy: false, timeout: 6000, maximumAge: 600000 }
         )
       } else {
-        // Permission denied (code 1) -> Jump to Network Fallback
         handleFallback('Location permission denied.')
       }
     },
@@ -1030,9 +1114,16 @@ function getLocation () {
 ========================= */
 function saveDraft () {
   const draft = {
-    category: document.getElementById('category')?.value || '',
+    category:    document.getElementById('category')?.value    || '',
     description: document.getElementById('description')?.value || '',
-    location: document.getElementById('location')?.value || ''
+    // Save all 6 structured location fields
+    locStreet:   document.getElementById('locStreet')?.value   || '',
+    locArea:     document.getElementById('locArea')?.value     || '',
+    locCity:     document.getElementById('locCity')?.value     || '',
+    locPincode:  document.getElementById('locPincode')?.value  || '',
+    locState:    document.getElementById('locState')?.value    || '',
+    locCountry:  document.getElementById('locCountry')?.value  || 'India',
+    location:    document.getElementById('location')?.value    || ''
   }
   safeStorage(CONFIG.DRAFT_KEY, draft)
 }
@@ -1041,16 +1132,20 @@ function loadDraft () {
   const draft = safeStorage(CONFIG.DRAFT_KEY)
   if (!draft) return
 
-  if (draft.category && document.getElementById('category')) {
-    document.getElementById('category').value = draft.category
-  }
-  if (draft.description && document.getElementById('description')) {
-    document.getElementById('description').value = draft.description
-    updateCharCount()
-  }
-  if (draft.location && document.getElementById('location')) {
-    document.getElementById('location').value = draft.location
-  }
+  if (draft.category    && document.getElementById('category'))    document.getElementById('category').value    = draft.category
+  if (draft.description && document.getElementById('description')) { document.getElementById('description').value = draft.description; updateCharCount() }
+
+  // Restore all 6 structured location fields
+  const setDraft = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val }
+  setDraft('locStreet',  draft.locStreet)
+  setDraft('locArea',    draft.locArea)
+  setDraft('locCity',    draft.locCity)
+  setDraft('locPincode', draft.locPincode)
+  setDraft('locState',   draft.locState)
+  setDraft('locCountry', draft.locCountry || 'India')
+
+  // Sync hidden field
+  syncLocationHiddenField()
 }
 
 function clearDraft () {
@@ -1130,15 +1225,51 @@ async function submitComplaint (event) {
     return
   }
 
-  const category = document.getElementById('category').value
+  const category    = document.getElementById('category').value
   const description = document.getElementById('description').value.trim()
-  const location = document.getElementById('location').value.trim()
-  const imageInput = document.getElementById('problemImage')
 
-  if (!category || !description || !location) {
-    showToast('Please fill all required fields!', 'error')
+  // Sync hidden field first, then read it
+  syncLocationHiddenField()
+  const location = document.getElementById('location')?.value.trim() || ''
+
+  // Validate individual required fields
+  const city    = document.getElementById('locCity')?.value.trim()
+  const state   = document.getElementById('locState')?.value.trim()
+  const pincode = document.getElementById('locPincode')?.value.trim()
+  const street  = document.getElementById('locStreet')?.value.trim()
+  const area    = document.getElementById('locArea')?.value.trim()
+
+  if (!category || !description) {
+    showToast('Please fill Category and Description!', 'error')
     return
   }
+  if (!street) {
+    showToast('Please enter Street / House No.!', 'error')
+    document.getElementById('locStreet')?.focus()
+    return
+  }
+  if (!area) {
+    showToast('Please enter Area / Colony!', 'error')
+    document.getElementById('locArea')?.focus()
+    return
+  }
+  if (!city) {
+    showToast('Please enter City!', 'error')
+    document.getElementById('locCity')?.focus()
+    return
+  }
+  if (!pincode || !/^\d{6}$/.test(pincode)) {
+    showToast('Please enter a valid 6-digit PIN Code!', 'error')
+    document.getElementById('locPincode')?.focus()
+    return
+  }
+  if (!state) {
+    showToast('Please select your State!', 'error')
+    document.getElementById('locState')?.focus()
+    return
+  }
+
+  const imageInput = document.getElementById('problemImage')
 
   const submitBtn = document.getElementById('submitBtn')
   if (submitBtn) {

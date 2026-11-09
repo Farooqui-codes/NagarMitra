@@ -1,12 +1,13 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-const dotenv = require('dotenv');
+const express    = require('express');
+const cors       = require('cors');
+const path       = require('path');
+const fs         = require('fs');
+const dotenv     = require('dotenv');
+const rateLimit  = require('express-rate-limit');
 
-// Robust Environment Variables Loader (works from any working directory)
+// ─── Robust Environment Variable Loader (works from any cwd) ─────────────────
 const backendEnvPath = path.join(__dirname, '.env');
-const rootEnvPath = path.join(__dirname, '../.env');
+const rootEnvPath    = path.join(__dirname, '../.env');
 
 if (fs.existsSync(backendEnvPath)) {
     dotenv.config({ path: backendEnvPath });
@@ -16,112 +17,150 @@ if (fs.existsSync(backendEnvPath)) {
     dotenv.config();
 }
 
-const { connectDB, isDbConnected, closeDB } = require('./config/db');
-
-// Startup Environment Validation
+// ─── FATAL checks — crash fast rather than run insecurely ────────────────────
 if (!process.env.MONGO_URI) {
-    console.warn('⚠️ WARNING: MONGO_URI is not set in .env. Database operations will be unavailable.');
+    console.error('❌ FATAL: MONGO_URI is not set in .env. Cannot start without a database.');
+    process.exit(1);
 }
 if (!process.env.JWT_SECRET) {
-    console.warn('⚠️ WARNING: JWT_SECRET is not set in .env. Using fallback key.');
+    console.error('❌ FATAL: JWT_SECRET is not set in .env. Refusing to start with an insecure default.');
+    process.exit(1);
+}
+if (process.env.JWT_SECRET === 'secret' || process.env.JWT_SECRET.length < 32) {
+    console.error('❌ FATAL: JWT_SECRET is too weak (must be at least 32 characters and not "secret").');
+    process.exit(1);
 }
 
-// Connect to MongoDB asynchronously without halting server boot
+const { connectDB, isDbConnected, closeDB } = require('./config/db');
+
+// Connect to MongoDB (non-blocking — exponential backoff handles retries)
 connectDB();
 
 const app = express();
 
-// Middlewares
+// ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : '*';
 
 app.use(cors({
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin:         allowedOrigins,
+    methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// ─── Body parsers ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ─── Rate Limiters ────────────────────────────────────────────────────────────
 
-// Serve frontend website
-app.use(express.static(path.join(__dirname, '../')));
-
-// Routes
-app.use('/api/complaints', require('./routes/complaintRoutes'));
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/stats', require('./routes/statsRoutes'));
-
-// Contact form inquiry endpoint
-app.post('/api/contact', (req, res) => {
-    const { name, email, phone, message } = req.body;
-    console.log(`📩 [Contact Inquiry Received]:`);
-    console.log(`- From: ${name} (${email}) | Phone: ${phone || 'N/A'}`);
-    console.log(`- Message: ${message}`);
-    console.log(`- Target Support Email: fmdumair07@gmail.com`);
-
-    res.json({
-        success: true,
-        message: 'Inquiry received and routed to fmdumair07@gmail.com'
-    });
+// Global API rate limiter — 200 requests per 15 min per IP
+const globalLimiter = rateLimit({
+    windowMs:  15 * 60 * 1000,
+    max:        200,
+    standardHeaders: true,
+    legacyHeaders:   false,
+    message: { success: false, message: 'Too many requests. Please try again later.' }
 });
 
-// Comprehensive Health check route: reports backend AND database separately
+// Strict limiter for auth routes — 10 attempts per 15 min per IP (brute force protection)
+const authLimiter = rateLimit({
+    windowMs:  15 * 60 * 1000,
+    max:        10,
+    standardHeaders: true,
+    legacyHeaders:   false,
+    message: { success: false, message: 'Too many login attempts. Please wait 15 minutes and try again.' }
+});
+
+// Complaint creation — 20 submissions per 15 min per IP (spam protection)
+const complaintCreateLimiter = rateLimit({
+    windowMs:  15 * 60 * 1000,
+    max:        20,
+    standardHeaders: true,
+    legacyHeaders:   false,
+    message: { success: false, message: 'Too many complaint submissions. Please wait and try again.' }
+});
+
+// Apply global limiter to all API routes
+app.use('/api/', globalLimiter);
+
+// Apply strict limiter to auth login/register
+app.use('/api/auth/login',    authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+// ─── Static file serving ──────────────────────────────────────────────────────
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(express.static(path.join(__dirname, '../')));
+
+// ─── API Routes ───────────────────────────────────────────────────────────────
+app.use('/api/complaints', complaintCreateLimiter); // Apply complaint limiter before route
+app.use('/api/complaints', require('./routes/complaintRoutes'));
+app.use('/api/auth',       require('./routes/authRoutes'));
+app.use('/api/stats',      require('./routes/statsRoutes'));
+
+// ─── Contact form endpoint ────────────────────────────────────────────────────
+app.post('/api/contact', (req, res) => {
+    const { name, email, phone, message } = req.body;
+    if (!name || !email || !message) {
+        return res.status(400).json({ success: false, message: 'Name, email, and message are required' });
+    }
+    console.log(`📩 [Contact Inquiry] From: ${name} (${email}) | Phone: ${phone || 'N/A'}`);
+    console.log(`   Message: ${message}`);
+    res.json({ success: true, message: 'Inquiry received. We will get back to you soon.' });
+});
+
+// ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
     const dbConnected = isDbConnected();
-    const isHealthy = dbConnected;
-
-    res.status(isHealthy ? 200 : 503).json({
-        success: isHealthy,
+    res.status(dbConnected ? 200 : 503).json({
+        success: dbConnected,
         backend: {
-            status: 'online',
-            uptime: Math.floor(process.uptime()),
+            status:  'online',
+            uptime:  Math.floor(process.uptime()),
             nodeEnv: process.env.NODE_ENV || 'development'
         },
         database: {
             status: dbConnected ? 'connected' : 'disconnected',
-            ready: dbConnected
+            ready:  dbConnected
         },
         message: dbConnected
             ? 'Backend API and Database are operational'
-            : 'Backend API is running, but MongoDB is currently unreachable or stopped'
+            : 'Backend API is running, but MongoDB is currently unreachable'
     });
 });
 
 app.get('/api', (req, res) => {
-    const dbConnected = isDbConnected();
     res.json({
-        success: true,
-        status: 'active',
-        database: dbConnected ? 'connected' : 'disconnected',
-        message: 'NagarMitra REST API'
+        success:  true,
+        status:   'active',
+        database: isDbConnected() ? 'connected' : 'disconnected',
+        message:  'NagarMitra REST API v2.0'
     });
 });
 
-// 404 for unknown API routes
+// ─── 404 for unknown API routes ───────────────────────────────────────────────
 app.use('/api/*', (req, res) => {
     res.status(404).json({ success: false, message: 'API route not found' });
 });
 
-// Error handling middleware (never expose sensitive stack traces)
+// ─── Global error handler (never expose stack traces) ─────────────────────────
 app.use((err, req, res, next) => {
     console.error('Server Error:', err.message);
-    const statusCode = err.status || 500;
-    res.status(statusCode).json({
+    res.status(err.status || 500).json({
         success: false,
         message: err.message || 'Internal Server Error'
     });
 });
 
-const PORT = process.env.PORT || 5000;
+// ─── Start server ─────────────────────────────────────────────────────────────
+const PORT   = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
     console.log(`🚀 NagarMitra Backend running on http://localhost:${PORT}`);
+    console.log(`🔒 Security: Rate limiting, JWT enforcement, XSS protection — ACTIVE`);
 });
 
-// Graceful shutdown handling
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
 const gracefulShutdown = async (signal) => {
     console.log(`\nReceived ${signal}. Shutting down gracefully...`);
     server.close(async () => {
@@ -129,14 +168,9 @@ const gracefulShutdown = async (signal) => {
         await closeDB();
         process.exit(0);
     });
-
-    // Force exit if not closed within 10s
-    setTimeout(() => {
-        console.error('Forced shutdown after timeout.');
-        process.exit(1);
-    }, 10000);
+    // Force exit if not done within 10s
+    setTimeout(() => { console.error('Forced shutdown after timeout.'); process.exit(1); }, 10000);
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));

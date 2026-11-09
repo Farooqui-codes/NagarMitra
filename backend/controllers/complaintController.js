@@ -1,46 +1,51 @@
+const xss = require('xss');
 const Complaint = require('../models/Complaint');
+const Counter = require('../models/Counter');
 const { isDbConnected } = require('../config/db');
 
-// Generate sequential complaint ID (e.g. PRB-001, PRB-002, PRB-003...)
+// ─── XSS sanitization options (allow no HTML tags at all) ───────────────────
+const xssOptions = {
+    whiteList: {},            // No HTML tags allowed
+    stripIgnoreTag: true,     // Strip disallowed tags
+    stripIgnoreTagBody: ['script', 'style']
+};
+const sanitize = (val) => val ? xss(String(val).trim(), xssOptions) : '';
+
+// ─── Atomic, race-condition-free sequential complaint ID generator ─────────
+// Uses MongoDB $inc on a Counter document — guaranteed unique even under load.
 const generateSequentialComplaintId = async () => {
-    // Query all existing complaints matching PRB- pattern
-    const existing = await Complaint.find({ complaintId: /^PRB-\d+$/ }, 'complaintId');
-    let maxSequentialNum = 0;
-
-    for (const c of existing) {
-        const match = c.complaintId && c.complaintId.match(/^PRB-(\d+)$/);
-        if (match) {
-            const num = parseInt(match[1], 10);
-            // Treat numbers < 1000 as part of the sequential series (001, 002...)
-            if (num < 1000 && num > maxSequentialNum) {
-                maxSequentialNum = num;
-            }
-        }
-    }
-
-    let nextNum = maxSequentialNum + 1;
-    let complaintId = `PRB-${String(nextNum).padStart(3, '0')}`;
-
-    // Check collision to ensure absolute uniqueness
-    while (await Complaint.findOne({ complaintId })) {
-        nextNum++;
-        complaintId = `PRB-${String(nextNum).padStart(3, '0')}`;
-    }
-
-    return complaintId;
+    const counter = await Counter.findOneAndUpdate(
+        { _id: 'complaintId' },
+        { $inc: { seq: 1 } },
+        { new: true, upsert: true }
+    );
+    return `PRB-${String(counter.seq).padStart(3, '0')}`;
 };
 
+// ─── Helper: resolve complaint by PRB-xxx ID or Mongo ObjectId ──────────────
+const findComplaint = async (id) => {
+    if (id.startsWith('PRB-')) {
+        return Complaint.findOne({ complaintId: id });
+    }
+    return (await Complaint.findById(id).catch(() => null)) ||
+           Complaint.findOne({ complaintId: id });
+};
+
+// ─── DB availability guard ───────────────────────────────────────────────────
+const dbUnavailable = (res) => res.status(503).json({
+    success: false,
+    error: 'DATABASE_UNAVAILABLE',
+    message: 'Database is currently offline. Please try again shortly.'
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Create new complaint
 // @route   POST /api/complaints
+// @access  Protected
+// ─────────────────────────────────────────────────────────────────────────────
 exports.createComplaint = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Your complaint draft has been preserved. Please try submitting again shortly.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
         const {
             category,
@@ -60,28 +65,26 @@ exports.createComplaint = async (req, res) => {
             });
         }
 
-        const complaintId = await generateSequentialComplaintId();
-
+        // Sanitize all text inputs against XSS
         const complaintData = {
-            complaintId,
-            category: category.trim(),
-            description: description.trim(),
-            location: location.trim(),
-            landmark: landmark ? landmark.trim() : '',
-            severity: severity || 'Medium',
-            department: department || 'Public Infrastructure Department',
-            imageUrl: imageUrl || '',
-            image: imageUrl || '',
-            citizenName: req.user ? req.user.name : 'Anonymous Citizen',
-            citizenEmail: req.user ? req.user.email.toLowerCase() : '',
-            citizenPhone: req.user ? req.user.phone : '',
-            status: 'Submitted',
-            utm: utm || null,
+            complaintId:   await generateSequentialComplaintId(),
+            category:      sanitize(category),
+            description:   sanitize(description),
+            location:      sanitize(location),
+            landmark:      sanitize(landmark),
+            severity:      severity || 'Medium',
+            department:    sanitize(department) || 'Public Infrastructure Department',
+            imageUrl:      imageUrl || '',
+            citizenName:   req.user ? sanitize(req.user.name) : 'Anonymous Citizen',
+            citizenEmail:  req.user ? req.user.email.toLowerCase() : '',
+            citizenPhone:  req.user ? (req.user.phone || '') : '',
+            status:        'Submitted',
+            utm:           utm || null,
             statusHistory: [{
-                status: 'Submitted',
+                status:    'Submitted',
                 changedAt: new Date(),
-                changedBy: req.user ? req.user.name : 'Citizen',
-                note: 'Complaint submitted'
+                changedBy: req.user ? sanitize(req.user.name) : 'Citizen',
+                note:      'Complaint submitted'
             }]
         };
 
@@ -89,93 +92,97 @@ exports.createComplaint = async (req, res) => {
             complaintData.user = req.user._id;
         }
 
+        // File upload overrides any URL passed in body
         if (req.file) {
             complaintData.imageUrl = `/uploads/${req.file.filename}`;
-            complaintData.image = `/uploads/${req.file.filename}`;
         }
 
         const complaint = await Complaint.create(complaintData);
-        res.status(201).json({
-            success: true,
-            data: complaint,
-            complaint
-        });
+        res.status(201).json({ success: true, data: complaint, complaint });
     } catch (error) {
         console.error('Create Complaint Error:', error);
         res.status(400).json({ success: false, message: error.message });
     }
 };
 
-// @desc    Get complaints (all for admin, own complaints for local_user)
-// @route   GET /api/complaints
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get complaints — admin gets all, local_user gets own only
+// @route   GET /api/complaints?page=1&limit=20&category=&status=&search=&sort=
+// @access  Protected
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getAllComplaints = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Please try again shortly.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
         const { category, status, search, priority, severity, sort, myReportsOnly } = req.query;
-        let query = {};
 
+        // ── Pagination ──────────────────────────────────────────────────────
+        const page  = Math.max(1, parseInt(req.query.page)  || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip  = (page - 1) * limit;
+
+        // ── Authorization scoping ────────────────────────────────────────────
+        let query = {};
         const isAdmin = req.user && req.user.role === 'admin';
 
         if (!isAdmin) {
-            // Local users are STRICTLY scoped to their own complaints
+            // Regular users see ONLY their own complaints
             query.$or = [
                 { user: req.user._id },
                 { citizenEmail: req.user.email.toLowerCase() }
             ];
         } else if (myReportsOnly === 'true') {
-            // Admin explicitly viewing own reports
             query.$or = [
                 { user: req.user._id },
                 { citizenEmail: req.user.email.toLowerCase() }
             ];
         }
 
+        // ── Filters ──────────────────────────────────────────────────────────
         if (category && category !== 'all') query.category = category;
-        if (status && status !== 'all') query.status = status;
-        if (priority && priority !== 'all') query.severity = priority;
-        if (severity && severity !== 'all') query.severity = severity;
+        if (status   && status   !== 'all') query.status   = status;
+        if ((priority || severity) && (priority || severity) !== 'all') {
+            query.severity = priority || severity;
+        }
 
         if (search) {
             const searchRegex = { $regex: search, $options: 'i' };
             const searchConditions = [
                 { description: searchRegex },
-                { location: searchRegex },
-                { category: searchRegex },
+                { location:    searchRegex },
+                { category:    searchRegex },
                 { complaintId: searchRegex }
             ];
             if (query.$or) {
-                query.$and = [
-                    { $or: query.$or },
-                    { $or: searchConditions }
-                ];
+                query.$and = [{ $or: query.$or }, { $or: searchConditions }];
                 delete query.$or;
             } else {
                 query.$or = searchConditions;
             }
         }
 
-        let queryBuilder = Complaint.find(query);
+        // ── Sort ─────────────────────────────────────────────────────────────
+        let sortOption;
+        if      (sort === 'upvotes') sortOption = { upvotes: -1, createdAt: -1 };
+        else if (sort === 'oldest')  sortOption = { createdAt: 1 };
+        else                         sortOption = { createdAt: -1 };
 
-        if (sort === 'upvotes') {
-            queryBuilder = queryBuilder.sort({ upvotes: -1, createdAt: -1 });
-        } else if (sort === 'oldest') {
-            queryBuilder = queryBuilder.sort({ createdAt: 1 });
-        } else {
-            queryBuilder = queryBuilder.sort({ createdAt: -1 });
-        }
+        // ── Execute query + count in parallel ────────────────────────────────
+        const [complaints, total] = await Promise.all([
+            Complaint.find(query).sort(sortOption).skip(skip).limit(limit),
+            Complaint.countDocuments(query)
+        ]);
 
-        const complaints = await queryBuilder;
+        const totalPages = Math.ceil(total / limit);
+
         res.json({
             success: true,
-            count: complaints.length,
-            data: complaints,
+            count:       complaints.length,
+            total,
+            page,
+            totalPages,
+            hasNextPage: page < totalPages,
+            data:        complaints,
             complaints
         });
     } catch (error) {
@@ -184,36 +191,24 @@ exports.getAllComplaints = async (req, res) => {
     }
 };
 
-// @desc    Get single complaint by ID (supports public tracking with privacy protection)
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Get single complaint by PRB-xxx or MongoDB ObjectId
 // @route   GET /api/complaints/:id
+// @access  Public (with privacy masking for non-owners)
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getComplaintById = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Please try again shortly.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
-        const id = req.params.id;
-        let complaint;
-
-        if (id.startsWith('PRB-')) {
-            complaint = await Complaint.findOne({ complaintId: id });
-        } else {
-            complaint = await Complaint.findById(id).catch(() => null) ||
-                        await Complaint.findOne({ complaintId: id });
-        }
-
+        const complaint = await findComplaint(req.params.id);
         if (!complaint) {
             return res.status(404).json({ success: false, message: 'Complaint not found' });
         }
 
-        // Privacy check: mask private contact details for third parties
+        // Determine access level for privacy protection
         const isOwner = req.user && (
-            (complaint.user && complaint.user.toString() === req.user._id.toString()) ||
-            (complaint.citizenEmail && complaint.citizenEmail.toLowerCase() === req.user.email.toLowerCase())
+            (complaint.user  && complaint.user.toString()     === req.user._id.toString()) ||
+            (complaint.citizenEmail && complaint.citizenEmail === req.user.email.toLowerCase())
         );
         const isAdmin = req.user && req.user.role === 'admin';
 
@@ -232,28 +227,17 @@ exports.getComplaintById = async (req, res) => {
     }
 };
 
-// @desc    Update complaint status (Admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update complaint status
 // @route   PATCH /api/complaints/:id/status
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Status update cannot be processed right now.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
         const { status, note } = req.body;
-        const id = req.params.id;
-
-        let complaint;
-        if (id.startsWith('PRB-')) {
-            complaint = await Complaint.findOne({ complaintId: id });
-        } else {
-            complaint = await Complaint.findById(id).catch(() => null) ||
-                        await Complaint.findOne({ complaintId: id });
-        }
+        const complaint = await findComplaint(req.params.id);
 
         if (!complaint) {
             return res.status(404).json({ success: false, message: 'Complaint not found' });
@@ -261,10 +245,10 @@ exports.updateStatus = async (req, res) => {
 
         complaint.status = status || complaint.status;
         complaint.statusHistory.push({
-            status: status || complaint.status,
+            status:    status || complaint.status,
             changedAt: new Date(),
-            changedBy: req.user ? req.user.name : 'Administrator',
-            note: note || `Status updated to ${status}`
+            changedBy: req.user ? sanitize(req.user.name) : 'Administrator',
+            note:      sanitize(note) || `Status updated to ${status}`
         });
 
         await complaint.save();
@@ -274,38 +258,28 @@ exports.updateStatus = async (req, res) => {
     }
 };
 
-// @desc    Upvote complaint
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Toggle upvote on a complaint
 // @route   POST /api/complaints/:id/upvote
+// @access  Optional auth (guests use IP as identifier)
+// ─────────────────────────────────────────────────────────────────────────────
 exports.upvoteComplaint = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Please try again shortly.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
-        const id = req.params.id;
-        let complaint;
-
-        if (id.startsWith('PRB-')) {
-            complaint = await Complaint.findOne({ complaintId: id });
-        } else {
-            complaint = await Complaint.findById(id).catch(() => null) ||
-                        await Complaint.findOne({ complaintId: id });
-        }
-
+        const complaint = await findComplaint(req.params.id);
         if (!complaint) {
             return res.status(404).json({ success: false, message: 'Complaint not found' });
         }
 
-        const identifier = req.user ? req.user.email : (req.body.email || ('ip_' + req.ip));
+        const identifier = req.user
+            ? req.user.email
+            : (req.body.email || `ip_${req.ip}`);
 
         const hasUpvoted = complaint.upvotedBy.includes(identifier);
         if (hasUpvoted) {
             complaint.upvotedBy = complaint.upvotedBy.filter(item => item !== identifier);
-            complaint.upvotes = Math.max(0, complaint.upvotes - 1);
+            complaint.upvotes   = Math.max(0, complaint.upvotes - 1);
         } else {
             complaint.upvotedBy.push(identifier);
             complaint.upvotes += 1;
@@ -313,9 +287,9 @@ exports.upvoteComplaint = async (req, res) => {
 
         await complaint.save();
         res.json({
-            success: true,
-            data: { upvotes: complaint.upvotes, hasUpvoted: !hasUpvoted },
-            upvotes: complaint.upvotes,
+            success:    true,
+            data:       { upvotes: complaint.upvotes, hasUpvoted: !hasUpvoted },
+            upvotes:    complaint.upvotes,
             hasUpvoted: !hasUpvoted
         });
     } catch (error) {
@@ -323,36 +297,24 @@ exports.upvoteComplaint = async (req, res) => {
     }
 };
 
-// @desc    Delete complaint (Admin or owner author only)
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Delete complaint
 // @route   DELETE /api/complaints/:id
+// @access  Admin or complaint owner
+// ─────────────────────────────────────────────────────────────────────────────
 exports.deleteComplaint = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Please try again shortly.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
-        const id = req.params.id;
-        let complaint;
-
-        if (id.startsWith('PRB-')) {
-            complaint = await Complaint.findOne({ complaintId: id });
-        } else {
-            complaint = await Complaint.findById(id).catch(() => null) ||
-                        await Complaint.findOne({ complaintId: id });
-        }
-
+        const complaint = await findComplaint(req.params.id);
         if (!complaint) {
             return res.status(404).json({ success: false, message: 'Complaint not found' });
         }
 
-        // Enforce permission: Admin or author
         const isAdmin = req.user.role === 'admin';
-        const isOwner = (complaint.user && complaint.user.toString() === req.user._id.toString()) ||
-                        (complaint.citizenEmail && complaint.citizenEmail.toLowerCase() === req.user.email.toLowerCase());
+        const isOwner =
+            (complaint.user && complaint.user.toString() === req.user._id.toString()) ||
+            (complaint.citizenEmail && complaint.citizenEmail === req.user.email.toLowerCase());
 
         if (!isAdmin && !isOwner) {
             return res.status(403).json({
@@ -368,68 +330,50 @@ exports.deleteComplaint = async (req, res) => {
     }
 };
 
-// Helper to format/escape CSV cell and protect against Formula Injection
+// ─── CSV Formula Injection protection ────────────────────────────────────────
 const formatCSVCell = (val) => {
     if (val === null || val === undefined) return '""';
     let str = String(val);
-    // Protect against Spreadsheet Formula Injection (CSV Injection)
-    if (/^[=\+\-@\t\r]/.test(str)) {
-        str = "'" + str;
-    }
+    if (/^[=+\-@\t\r]/.test(str)) str = "'" + str;   // Neutralize formula injection
     return `"${str.replace(/"/g, '""')}"`;
 };
 
-// @desc    Export CSV (Admin only)
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Export all (filtered) complaints as CSV
 // @route   GET /api/complaints/export/csv
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
 exports.exportCSV = async (req, res) => {
     try {
-        if (!isDbConnected()) {
-            return res.status(503).json({
-                success: false,
-                error: 'DATABASE_UNAVAILABLE',
-                message: 'Database is currently offline. Cannot export data.'
-            });
-        }
+        if (!isDbConnected()) return dbUnavailable(res);
 
         const { category, status, priority, severity, department, search } = req.query;
         const query = {};
 
-        if (category && category !== 'all') query.category = category;
-        if (status && status !== 'all') query.status = status;
-        if (priority && priority !== 'all') query.severity = priority;
-        if (severity && severity !== 'all') query.severity = severity;
+        if (category   && category   !== 'all') query.category   = category;
+        if (status     && status     !== 'all') query.status     = status;
+        if (priority   && priority   !== 'all') query.severity   = priority;
+        if (severity   && severity   !== 'all') query.severity   = severity;
         if (department && department !== 'all') query.department = department;
 
         if (search) {
             const searchRegex = { $regex: search, $options: 'i' };
             query.$or = [
-                { description: searchRegex },
-                { location: searchRegex },
-                { landmark: searchRegex },
-                { category: searchRegex },
-                { complaintId: searchRegex },
-                { citizenName: searchRegex }
+                { description:  searchRegex },
+                { location:     searchRegex },
+                { landmark:     searchRegex },
+                { category:     searchRegex },
+                { complaintId:  searchRegex },
+                { citizenName:  searchRegex }
             ];
         }
 
-        // Export all matching records authorized for admin
         const complaints = await Complaint.find(query).sort({ createdAt: -1 });
 
         const headers = [
-            'Complaint ID',
-            'Category',
-            'Description',
-            'Location',
-            'Landmark',
-            'Severity',
-            'Department',
-            'Status',
-            'Upvotes',
-            'Reported By',
-            'Citizen Email',
-            'Citizen Phone',
-            'Latest Remarks',
-            'Submission Date'
+            'Complaint ID', 'Category', 'Description', 'Location', 'Landmark',
+            'Severity', 'Department', 'Status', 'Upvotes', 'Reported By',
+            'Citizen Email', 'Citizen Phone', 'Latest Remarks', 'Submission Date'
         ];
 
         let csv = headers.map(formatCSVCell).join(',') + '\r\n';
@@ -438,34 +382,29 @@ exports.exportCSV = async (req, res) => {
             const latestHistory = Array.isArray(c.statusHistory) && c.statusHistory.length > 0
                 ? c.statusHistory[c.statusHistory.length - 1]
                 : null;
-            const remarks = latestHistory && latestHistory.note ? latestHistory.note : '';
-            const dateStr = c.createdAt ? new Date(c.createdAt).toISOString() : '';
 
             const row = [
                 c.complaintId || c._id,
-                c.category || '',
+                c.category    || '',
                 c.description || '',
-                c.location || '',
-                c.landmark || '',
-                c.severity || 'Medium',
-                c.department || '',
-                c.status || 'Submitted',
-                c.upvotes || 0,
+                c.location    || '',
+                c.landmark    || '',
+                c.severity    || 'Medium',
+                c.department  || '',
+                c.status      || 'Submitted',
+                c.upvotes     || 0,
                 c.citizenName || 'Anonymous Citizen',
                 c.citizenEmail || '',
                 c.citizenPhone || '',
-                remarks,
-                dateStr
+                latestHistory?.note || '',
+                c.createdAt ? new Date(c.createdAt).toISOString() : ''
             ];
-
             csv += row.map(formatCSVCell).join(',') + '\r\n';
         });
 
-        const today = new Date().toISOString().slice(0, 10);
+        const today    = new Date().toISOString().slice(0, 10);
         const filename = `NagarMitra_Complaints_${today}.csv`;
-
-        // Prepend UTF-8 Byte Order Mark (BOM) so Excel renders Unicode/Hindi correctly
-        const BOM = '\uFEFF';
+        const BOM      = '\uFEFF'; // UTF-8 BOM so Excel renders Hindi correctly
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -476,4 +415,3 @@ exports.exportCSV = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
-
