@@ -105,6 +105,19 @@ app.get('/preview.png', (req, res) => {
     }
 });
 
+// Explicit route for Service Worker (must not be aggressively cached)
+app.get('/sw.js', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(__dirname, '../sw.js'));
+});
+
+// Explicit route for Web App Manifest
+app.get('/manifest.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.sendFile(path.join(__dirname, '../manifest.json'));
+});
+
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/complaints', complaintCreateLimiter); // Apply complaint limiter before route
 app.use('/api/complaints', require('./routes/complaintRoutes'));

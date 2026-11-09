@@ -537,6 +537,24 @@ textarea {
     color: white;
 }
 
+.nav-btn.pwa-install-btn {
+    background: rgba(2, 132, 199, 0.15);
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    animation: pwaPulse 3s infinite;
+}
+
+.nav-btn.pwa-install-btn:hover {
+    background: var(--primary-gradient);
+    color: #ffffff;
+    box-shadow: 0 4px 15px var(--shadow);
+}
+
+@keyframes pwaPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(2, 132, 199, 0); }
+}
+
 /* ==================== MOBILE NAVIGATION TOGGLE & DRAWER ==================== */
 .mobile-nav-toggle,
 .mobile-dots-btn {

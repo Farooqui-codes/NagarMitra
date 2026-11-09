@@ -27,10 +27,18 @@
       content="ENTER_YOUR_GSC_VERIFICATION_CODE_HERE"
     />
 
+    <!-- PWA Web App Manifest & Mobile Capability -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="NagarMitra" />
+    <meta name="application-name" content="NagarMitra" />
+    <meta name="msapplication-TileColor" content="#070d1a" />
+
     <!-- ============================================================
          OPEN GRAPH — WhatsApp, Facebook, LinkedIn, Telegram Preview
-         Image: 1200x630px (hosted at /preview.png on the same domain)
-         WhatsApp requires og:image to be HTTPS + min 200x200
+         Images: 1200x630 (Banner) + 512x512 (Square Logo for WhatsApp)
     ============================================================ -->
     <meta property="og:type"         content="website" />
     <meta property="og:url"          content="https://nagarmitra.pages.dev/" />
@@ -38,12 +46,19 @@
     <meta property="og:locale"       content="en_IN" />
     <meta property="og:title"        content="NagarMitra – Smart City Complaint Portal 🏙️" />
     <meta property="og:description"  content="📍 Report potholes, garbage, broken streetlights, water leakage & more. Track resolution in real-time. Free for all citizens. Click to report now!" />
+    <!-- 1200x630 High Resolution Banner Preview -->
     <meta property="og:image"        content="https://nagarmitra.pages.dev/preview.png" />
     <meta property="og:image:secure_url" content="https://nagarmitra.pages.dev/preview.png" />
     <meta property="og:image:type"   content="image/png" />
     <meta property="og:image:width"  content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt"    content="NagarMitra – Report civic problems and track resolution in real time" />
+    <meta property="og:image:alt"    content="NagarMitra – Smart City Complaint Management System" />
+    <!-- 512x512 Square Logo Preview (Crucial for WhatsApp chat square thumbnail) -->
+    <meta property="og:image"        content="https://nagarmitra.pages.dev/icon-512.png" />
+    <meta property="og:image:secure_url" content="https://nagarmitra.pages.dev/icon-512.png" />
+    <meta property="og:image:type"   content="image/png" />
+    <meta property="og:image:width"  content="512" />
+    <meta property="og:image:height" content="512" />
 
     <!-- Twitter / X Card -->
     <meta name="twitter:card"        content="summary_large_image" />
@@ -54,17 +69,15 @@
     <meta name="twitter:image"       content="https://nagarmitra.pages.dev/preview.png" />
     <meta name="twitter:image:alt"   content="NagarMitra Civic Complaint Portal" />
 
-    <!-- WhatsApp / iMessage specifically reads og: tags — no extra tag needed -->
-    <!-- Telegram reads og: tags — covered above -->
-    <!-- LinkedIn reads og: tags — covered above -->
-
-    <!-- Favicon & Icons -->
+    <!-- Favicon & Touch Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
     <link
       rel="icon"
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230284c7'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui,sans-serif' font-weight='900' font-size='34' fill='white'%3EN%3C/text%3E%3C/svg%3E"
     />
-    <link rel="apple-touch-icon" href="logo.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <link rel="image_src" href="https://nagarmitra.pages.dev/preview.png" />
 
     <!-- Performance Optimizations: Resource Preconnects -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -136,6 +149,7 @@
             "@id": "https://nagarmitra.pages.dev/#webapp",
             "name": "NagarMitra",
             "url": "https://nagarmitra.pages.dev/",
+            "image": "https://nagarmitra.pages.dev/preview.png",
             "description": "NagarMitra – Smart City Complaint Management System. Empowering citizens to report public municipal issues and track resolution in real time.",
             "applicationCategory": "GovernmentApplication, CivicUtility",
             "operatingSystem": "All modern browsers (Mobile, Tablet, Desktop)",
@@ -155,7 +169,7 @@
             "@id": "https://nagarmitra.pages.dev/#organization",
             "name": "NagarMitra Civic Redressal",
             "url": "https://nagarmitra.pages.dev/",
-            "logo": "https://nagarmitra.pages.dev/logo.png",
+            "logo": "https://nagarmitra.pages.dev/icon-512.png",
             "contactPoint": {
               "@type": "ContactPoint",
               "telephone": "+91-90049-20733",
@@ -374,6 +388,15 @@
         >
           <i class="fas fa-moon" id="themeIcon"></i>
         </button>
+        <button
+          class="nav-btn pwa-install-btn"
+          id="pwaInstallBtn"
+          onclick="installPWA()"
+          title="Install NagarMitra App"
+          style="display: none;"
+        >
+          <i class="fas fa-download"></i> Install App
+        </button>
         <button class="nav-btn" onclick="showPage('login')">Login</button>
         <button class="nav-btn primary" onclick="showPage('register')">
           Register
@@ -530,6 +553,15 @@
         </div>
 
         <div class="mobile-menu-bottom-tools">
+          <button
+            class="mobile-tool-btn"
+            id="mobilePwaInstallBtn"
+            onclick="installPWA(); closeMobileMenu();"
+            title="Install NagarMitra App"
+            style="display: none;"
+          >
+            <i class="fas fa-download"></i> <span>Install</span>
+          </button>
           <button
             class="mobile-tool-btn"
             onclick="toggleTheme()"

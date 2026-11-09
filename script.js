@@ -2443,7 +2443,7 @@ async function submitContact (event) {
   // Show loading state
   btn.disabled = true
   const originalBtnHTML = btn.innerHTML
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending message via Web3Forms...'
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending message...'
 
   const targetEmail = 'fmdumair07@gmail.com'
 
@@ -2494,20 +2494,20 @@ async function submitContact (event) {
         successDiv.style.display = 'block'
         const successP = successDiv.querySelector('p')
         if (successP) {
-          successP.innerHTML = `Thank you <strong>${escapeHTML(name)}</strong>! Your message has been sent via Web3Forms directly to <strong>${targetEmail}</strong>. We will get back to you shortly.`
+          successP.innerHTML = `Thank you <strong>${escapeHTML(name)}</strong>! Your message has been sent successfully. Our support team will get back to you shortly.`
         }
       }
 
-      showToast(`Message sent via Web3Forms to ${targetEmail}!`, 'success')
+      showToast('Message sent successfully! We will get back to you soon.', 'success')
       form.reset()
       return
     } else {
-      console.warn('Web3Forms returned non-success:', result)
-      throw new Error(result.message || 'Web3Forms returned an error')
+      console.warn('Contact service returned non-success:', result)
+      throw new Error(result.message || 'Contact service returned an error')
     }
 
   } catch (err) {
-    console.warn('Web3Forms error, fallback to backup delivery:', err)
+    console.warn('Primary contact error, trying backup delivery:', err)
     btn.disabled = false
     btn.innerHTML = originalBtnHTML
 
@@ -2706,5 +2706,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
   toggleScrollButton()
   window.addEventListener('scroll', toggleScrollButton, { passive: true })
+})
+
+/* ========================================================
+   PROGRESSIVE WEB APP (PWA) REGISTRATION & INSTALL PROMPT
+======================================================== */
+let deferredPwaPrompt = null
+
+// 1. Service Worker Registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(reg => {
+        console.log('[PWA] Service Worker registered with scope:', reg.scope)
+      })
+      .catch(err => {
+        console.warn('[PWA] Service Worker registration failed:', err)
+      })
+  })
+}
+
+// 2. Capture install prompt
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault()
+  deferredPwaPrompt = e
+
+  // Show desktop/navbar install button
+  const pwaBtn = document.getElementById('pwaInstallBtn')
+  if (pwaBtn) pwaBtn.style.display = 'inline-flex'
+
+  // Show mobile menu install button
+  const mobPwaBtn = document.getElementById('mobilePwaInstallBtn')
+  if (mobPwaBtn) mobPwaBtn.style.display = 'inline-flex'
+})
+
+// 3. User Triggered PWA Installation
+window.installPWA = async function () {
+  if (!deferredPwaPrompt) {
+    showToast('To install NagarMitra, tap your browser menu and choose "Add to Home Screen".', 'info')
+    return
+  }
+  deferredPwaPrompt.prompt()
+  const choice = await deferredPwaPrompt.userChoice
+  if (choice && choice.outcome === 'accepted') {
+    showToast('NagarMitra App installed successfully! 🎉', 'success')
+  }
+  deferredPwaPrompt = null
+
+  const pwaBtn = document.getElementById('pwaInstallBtn')
+  if (pwaBtn) pwaBtn.style.display = 'none'
+  const mobPwaBtn = document.getElementById('mobilePwaInstallBtn')
+  if (mobPwaBtn) mobPwaBtn.style.display = 'none'
+}
+
+// 4. App Installed listener
+window.addEventListener('appinstalled', () => {
+  console.log('[PWA] NagarMitra was installed')
+  showToast('NagarMitra installed on your device!', 'success')
 })
 
