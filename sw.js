@@ -3,7 +3,7 @@
  * Version: 2.1.0
  */
 
-const CACHE_NAME = 'nagarmitra-v2.1.0';
+const CACHE_NAME = 'nagarmitra-v2.2.0';
 
 // Core assets to pre-cache on install
 const PRECACHE_ASSETS = [
@@ -11,6 +11,8 @@ const PRECACHE_ASSETS = [
   '/index.html',
   '/style.css',
   '/script.js',
+  '/i18n.js',
+  '/features.js',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',

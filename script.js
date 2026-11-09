@@ -1400,6 +1400,9 @@ function finishSubmission (complaint) {
         id="copySuccessIdBtn">
         <i class="fas fa-copy"></i> Copy ID
       </button>
+      <button class="btn secondary" onclick="downloadComplaintReceipt('${escapeHTML(id)}')">
+        <i class="fas fa-file-pdf" style="color:#ef4444;"></i> Download Receipt (PDF)
+      </button>
       <button class="btn primary" onclick="goToTrackFromSuccess('${escapeHTML(id)}')">
         <i class="fas fa-search"></i> Track Complaint
       </button>
@@ -1553,10 +1556,26 @@ async function trackComplaint () {
             <p>Current Status: <strong style="color:var(--primary);">${escapeHTML(
               complaint.status
             )}</strong></p>
+
+            ${(complaint.imageUrl || complaint.image) ? `
+              <div style="margin-top:14px;padding:12px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.08);">
+                <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px;"><i class="fas fa-camera"></i> Attached Photo Proof:</p>
+                <img src="${escapeHTML(complaint.imageUrl || complaint.image)}" style="max-height:160px;max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer;object-fit:cover;" onclick="if(typeof openLightbox==='function')openLightbox(this.src)" />
+              </div>
+            ` : ''}
+
+            <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
+              <button class="btn secondary" onclick="downloadComplaintReceipt('${escapeHTML(compId)}')" style="gap:8px;">
+                <i class="fas fa-file-pdf" style="color:#ef4444;"></i> Download Official PDF Receipt (पावती)
+              </button>
+            </div>
         </div>`
 
   loadUpvoteForComplaint(compId, result, complaint.upvotes || 0)
   loadOwnerActionsForComplaint(complaint, result)
+  if (typeof renderResolutionFeedback === 'function') {
+    renderResolutionFeedback(complaint, result)
+  }
 }
 
 /* =========================
@@ -2680,6 +2699,11 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(checkBackendHealth, 15000)
 
   loadHeroStats()
+
+  // Initialize structured location sync listeners
+  if (typeof attachLocationFieldListeners === 'function') {
+    attachLocationFieldListeners()
+  }
 
   // Auto-save draft on report fields
   ;['category', 'description', 'location'].forEach(id => {

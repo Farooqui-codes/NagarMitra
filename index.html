@@ -94,6 +94,12 @@
       href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <!-- Leaflet.js Interactive Map Stylesheet -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
 
     <!-- ========================================================
          GOOGLE ANALYTICS 4 (GA4) & GOOGLE ADS SETUP
@@ -382,6 +388,14 @@
           </div>
         </div>
         <button
+          class="theme-toggle lang-toggle"
+          id="langToggleBtn"
+          onclick="toggleLanguage()"
+          title="Switch Language / भाषा बदलें"
+        >
+          <i class="fas fa-language"></i> <span id="currentLangLabel">हिन्दी</span>
+        </button>
+        <button
           class="theme-toggle"
           onclick="toggleTheme()"
           title="Toggle theme"
@@ -553,6 +567,13 @@
         </div>
 
         <div class="mobile-menu-bottom-tools">
+          <button
+            class="mobile-tool-btn"
+            onclick="toggleLanguage()"
+            title="Switch Language / भाषा बदलें"
+          >
+            <i class="fas fa-language"></i> <span id="mobileLangLabel">हिन्दी</span>
+          </button>
           <button
             class="mobile-tool-btn"
             id="mobilePwaInstallBtn"
@@ -735,6 +756,33 @@
           <h3>Other Civic Issues</h3>
           <p>Report any other public problem</p>
         </div>
+      </div>
+
+      <!-- ================= LIVE INTERACTIVE CITY GRIEVANCE MAP ================= -->
+      <div class="city-map-section" id="cityMapSection">
+        <div class="section-title">
+          <span id="cityMapTag">LIVE COMPLAINTS RADAR</span>
+          <h2 id="cityMapTitle">Live City Grievance Map</h2>
+          <p id="cityMapSub">
+            View all reported municipal problems across the city in real-time with color-coded status pins.
+          </p>
+        </div>
+
+        <div class="map-controls">
+          <div class="map-legend">
+            <span class="legend-item"><span class="legend-dot red"></span> Submitted</span>
+            <span class="legend-item"><span class="legend-dot yellow"></span> In Progress</span>
+            <span class="legend-item"><span class="legend-dot green"></span> Resolved</span>
+          </div>
+          <div class="map-filter-buttons">
+            <button class="map-filter-btn active" data-status="all" onclick="filterMapMarkers('all')">All Complaints</button>
+            <button class="map-filter-btn" data-status="Submitted" onclick="filterMapMarkers('Submitted')">Submitted</button>
+            <button class="map-filter-btn" data-status="In Progress" onclick="filterMapMarkers('In Progress')">In Progress</button>
+            <button class="map-filter-btn" data-status="Resolved" onclick="filterMapMarkers('Resolved')">Resolved</button>
+          </div>
+        </div>
+
+        <div id="cityMap" class="city-map-container" data-pick-mode="false"></div>
       </div>
 
       <div class="info-section">
@@ -1415,18 +1463,132 @@
           </div>
           <div id="imagePreview"></div>
 
-          <label
-            ><i class="fas fa-map-marker-alt"></i> Location / Address *</label
-          >
-          <input
-            type="text"
-            id="location"
-            placeholder="Area, city, pincode, state, country"
-            required
-          />
-          <button type="button" class="location-btn" onclick="getLocation()">
-            <i class="fas fa-crosshairs"></i> Use My Current Location
-          </button>
+          <!-- ======= STRUCTURED MULTI-FIELD ADDRESS ======= -->
+          <label><i class="fas fa-map-marker-alt"></i> Location / Address *</label>
+
+          <div class="location-fields-grid">
+            <div class="loc-field-group full-width">
+              <label for="locStreet"><i class="fas fa-road"></i> Street / House No. *</label>
+              <input
+                type="text"
+                id="locStreet"
+                name="locStreet"
+                placeholder="e.g. 12, MG Road, Near Bus Stand"
+                required
+                autocomplete="street-address"
+              />
+            </div>
+
+            <div class="loc-field-group">
+              <label for="locArea"><i class="fas fa-map-signs"></i> Area / Colony *</label>
+              <input
+                type="text"
+                id="locArea"
+                name="locArea"
+                placeholder="e.g. Juhu, Andheri West"
+                required
+                autocomplete="address-level3"
+              />
+            </div>
+
+            <div class="loc-field-group">
+              <label for="locCity"><i class="fas fa-city"></i> City *</label>
+              <input
+                type="text"
+                id="locCity"
+                name="locCity"
+                placeholder="e.g. Mumbai"
+                required
+                autocomplete="address-level2"
+              />
+            </div>
+
+            <div class="loc-field-group">
+              <label for="locPincode"><i class="fas fa-hashtag"></i> PIN Code *</label>
+              <input
+                type="text"
+                id="locPincode"
+                name="locPincode"
+                placeholder="e.g. 400001"
+                required
+                maxlength="6"
+                pattern="[0-9]{6}"
+                inputmode="numeric"
+                autocomplete="postal-code"
+              />
+            </div>
+
+            <div class="loc-field-group">
+              <label for="locState"><i class="fas fa-flag"></i> State *</label>
+              <select id="locState" name="locState" required autocomplete="address-level1">
+                <option value="">Select State</option>
+                <option>Andhra Pradesh</option>
+                <option>Arunachal Pradesh</option>
+                <option>Assam</option>
+                <option>Bihar</option>
+                <option>Chhattisgarh</option>
+                <option>Goa</option>
+                <option>Gujarat</option>
+                <option>Haryana</option>
+                <option>Himachal Pradesh</option>
+                <option>Jharkhand</option>
+                <option>Karnataka</option>
+                <option>Kerala</option>
+                <option>Madhya Pradesh</option>
+                <option>Maharashtra</option>
+                <option>Manipur</option>
+                <option>Meghalaya</option>
+                <option>Mizoram</option>
+                <option>Nagaland</option>
+                <option>Odisha</option>
+                <option>Punjab</option>
+                <option>Rajasthan</option>
+                <option>Sikkim</option>
+                <option>Tamil Nadu</option>
+                <option>Telangana</option>
+                <option>Tripura</option>
+                <option>Uttar Pradesh</option>
+                <option>Uttarakhand</option>
+                <option>West Bengal</option>
+                <optgroup label="Union Territories">
+                  <option>Andaman and Nicobar Islands</option>
+                  <option>Chandigarh</option>
+                  <option>Dadra and Nagar Haveli and Daman and Diu</option>
+                  <option>Delhi</option>
+                  <option>Jammu and Kashmir</option>
+                  <option>Ladakh</option>
+                  <option>Lakshadweep</option>
+                  <option>Puducherry</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="loc-field-group">
+              <label for="locCountry"><i class="fas fa-globe-asia"></i> Country</label>
+              <input
+                type="text"
+                id="locCountry"
+                name="locCountry"
+                value="India"
+                placeholder="Country"
+                autocomplete="country-name"
+              />
+            </div>
+          </div>
+
+          <!-- Hidden combined location input for backend API compatibility -->
+          <input type="hidden" id="location" name="location" />
+
+          <!-- Location Action Buttons Row -->
+          <div class="location-actions-row">
+            <button type="button" class="location-btn" onclick="getLocation()" style="flex: 1;">
+              <i class="fas fa-crosshairs"></i> Auto-Fill My Current Location
+            </button>
+            <button type="button" class="btn secondary btn-pick-map" id="btnPickMap" onclick="toggleMapPickMode()" style="padding: 10px 16px; font-size: 13px;">
+              <i class="fas fa-map-marked-alt"></i> Pick Location on Map
+            </button>
+          </div>
+
           <div id="coordinates" aria-live="polite"></div>
           <small class="location-attribution"
             >Address data © OpenStreetMap contributors</small
@@ -1951,6 +2113,19 @@
       <i class="fas fa-times lightbox-close"></i>
       <img id="lightboxImg" src="" alt="Preview" />
     </div>
+
+    <!-- Leaflet.js Interactive Maps -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <!-- jsPDF & QRCode.js for Official PDF Receipts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- Bilingual i18n Translation Engine -->
+    <script src="i18n.js"></script>
+
+    <!-- NagarMitra Interactive Features (Map, PDF, Feedback) -->
+    <script src="features.js"></script>
 
     <script src="script.js"></script>
   </body>
