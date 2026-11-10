@@ -126,11 +126,12 @@ exports.login = async (req, res) => {
         res.json({
             success: true,
             user: {
-                id:    user._id,
-                name:  user.name,
-                email: user.email,
-                phone: user.phone,
-                role:  effectiveRole
+                id:         user._id,
+                name:       user.name,
+                email:      user.email,
+                phone:      user.phone,
+                role:       effectiveRole,
+                department: user.department || ''
             },
             token
         });
@@ -155,11 +156,12 @@ exports.getMe = async (req, res) => {
         res.json({
             success: true,
             user: {
-                id:    req.user._id,
-                name:  req.user.name,
-                email: req.user.email,
-                phone: req.user.phone,
-                role:  effectiveRole
+                id:         req.user._id,
+                name:       req.user.name,
+                email:      req.user.email,
+                phone:      req.user.phone,
+                role:       effectiveRole,
+                department: req.user.department || ''
             }
         });
     } catch (error) {

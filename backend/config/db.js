@@ -110,6 +110,10 @@ mongoose.connection.on('connected', () => {
     const host = mongoose.connection.host || 'unknown-host';
     const dbName = mongoose.connection.name || 'default';
     console.log(`✅ [MongoDB] Connected successfully to host: ${host} | Database: ${dbName}`);
+    try {
+        const { ensureDefaultOfficers } = require('./seedOfficers');
+        ensureDefaultOfficers();
+    } catch (e) {}
 });
 
 mongoose.connection.on('disconnected', () => {

@@ -16,6 +16,10 @@ const statusHistorySchema = new mongoose.Schema({
     note: {
         type: String,
         default: ''
+    },
+    notifiedVia: {
+        type: String,
+        default: ''
     }
 }, { _id: false });
 

@@ -77,9 +77,9 @@ exports.createComplaint = async (req, res) => {
             severity:      severity || 'Medium',
             department:    sanitize(department) || 'Public Infrastructure Department',
             imageUrl:      imageUrl || '',
-            citizenName:   req.user ? sanitize(req.user.name) : 'Anonymous Citizen',
-            citizenEmail:  req.user ? req.user.email.toLowerCase() : '',
-            citizenPhone:  req.user ? (req.user.phone || '') : '',
+            citizenName:   sanitize(req.body.citizenName) || (req.user ? sanitize(req.user.name) : 'Anonymous Citizen'),
+            citizenEmail:  (req.body.citizenEmail ? String(req.body.citizenEmail).toLowerCase().trim() : '') || (req.user ? req.user.email.toLowerCase() : ''),
+            citizenPhone:  sanitize(req.body.citizenPhone) || (req.user ? (req.user.phone || '') : ''),
             status:        'Submitted',
             utm:           utm || null,
             statusHistory: [{
@@ -157,14 +157,24 @@ exports.getAllComplaints = async (req, res) => {
         // ── Authorization scoping ────────────────────────────────────────────
         let query = {};
         const isAdmin = req.user && req.user.role === 'admin';
+        const isOfficer = req.user && req.user.role === 'department_officer';
 
-        if (!isAdmin) {
-            // Regular users see ONLY their own complaints
-            query.$or = [
-                { user: req.user._id },
-                { citizenEmail: req.user.email.toLowerCase() }
-            ];
-        } else if (myReportsOnly === 'true') {
+        if (isAdmin) {
+            if (myReportsOnly === 'true') {
+                query.$or = [
+                    { user: req.user._id },
+                    { citizenEmail: req.user.email.toLowerCase() }
+                ];
+            }
+        } else if (isOfficer) {
+            // Department officers only see grievances assigned to their department
+            if (req.user.department) {
+                // Match department with regex to handle variations (e.g. "PWD", "Sanitation", etc.)
+                const deptKey = req.user.department.replace(/[()]/g, '').trim();
+                query.department = { $regex: deptKey, $options: 'i' };
+            }
+        } else {
+            // Regular citizens see ONLY their own complaints
             query.$or = [
                 { user: req.user._id },
                 { citizenEmail: req.user.email.toLowerCase() }
@@ -261,31 +271,85 @@ exports.getComplaintById = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// @desc    Update complaint status
+// @desc    Update complaint status & trigger notification payload
 // @route   PATCH /api/complaints/:id/status
-// @access  Admin only
+// @access  Admin & Department Officers
 // ─────────────────────────────────────────────────────────────────────────────
 exports.updateStatus = async (req, res) => {
     try {
         if (!isDbConnected()) return dbUnavailable(res);
 
-        const { status, note } = req.body;
+        const { status, note, notifiedVia } = req.body;
         const complaint = await findComplaint(req.params.id);
 
         if (!complaint) {
             return res.status(404).json({ success: false, message: 'Complaint not found' });
         }
 
+        // Department officer role check: ensure grievance belongs to their department
+        if (req.user && req.user.role === 'department_officer' && req.user.department) {
+            const officerDept = req.user.department.toLowerCase();
+            const compDept = (complaint.department || '').toLowerCase();
+            const key = officerDept.replace(/department|dept|\(pwd\)|\/|\s+/gi, '').trim();
+            if (compDept && key && !compDept.toLowerCase().includes(key)) {
+                return res.status(403).json({
+                    success: false,
+                    message: `Access denied: As ${req.user.department} officer, you can only manage grievances in your jurisdiction.`
+                });
+            }
+        }
+
         complaint.status = status || complaint.status;
+
+        const officerName = req.user ? sanitize(req.user.name) : 'Municipal Authority';
+        const officerRole = req.user && req.user.role === 'department_officer'
+            ? `${req.user.department} Officer`
+            : 'Chief Municipal Admin';
+
         complaint.statusHistory.push({
-            status:    status || complaint.status,
-            changedAt: new Date(),
-            changedBy: req.user ? sanitize(req.user.name) : 'Administrator',
-            note:      sanitize(note) || `Status updated to ${status}`
+            status:      status || complaint.status,
+            changedAt:   new Date(),
+            changedBy:   `${officerName} (${officerRole})`,
+            note:        sanitize(note) || `Status marked as "${status}"`,
+            notifiedVia: notifiedVia || 'WhatsApp & SMS Alert'
         });
 
         await complaint.save();
-        res.json({ success: true, data: complaint, complaint });
+
+        // ── Automatic Citizen Notification Generation (WhatsApp & SMS) ──
+        const citizenPhoneClean = (complaint.citizenPhone || '').replace(/\D/g, '').slice(-10);
+        const citizenName = complaint.citizenName || 'Citizen';
+        const notifText =
+            `*NagarMitra Status Alert*\n\n` +
+            `Namaste ${citizenName},\n` +
+            `Your registered complaint *#${complaint.complaintId}* (${complaint.category}) has been updated:\n\n` +
+            `*New Status:* ${complaint.status}\n` +
+            (note ? `*Officer Remark:* ${sanitize(note)}\n` : '') +
+            `*Department:* ${complaint.department || 'Municipal Corporation'}\n\n` +
+            `Track live progress & download official receipt:\n` +
+            `https://problem-x.onrender.com/?track=${encodeURIComponent(complaint.complaintId)}`;
+
+        const whatsappUrl = citizenPhoneClean.length === 10
+            ? `https://wa.me/91${citizenPhoneClean}?text=${encodeURIComponent(notifText)}`
+            : null;
+
+        const smsUrl = citizenPhoneClean.length === 10
+            ? `sms:+91${citizenPhoneClean}?body=${encodeURIComponent(notifText)}`
+            : null;
+
+        res.json({
+            success: true,
+            data: complaint,
+            complaint,
+            notification: {
+                recipientName:  citizenName,
+                recipientPhone: citizenPhoneClean,
+                status:         complaint.status,
+                message:        notifText,
+                whatsappUrl,
+                smsUrl
+            }
+        });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
     }

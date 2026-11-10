@@ -19,8 +19,8 @@ router.route('/')
     .get(protect, getAllComplaints)
     .post(protect, upload.single('image'), createComplaint);
 
-// Admin-only CSV export
-router.get('/export/csv', protect, authorize('admin'), exportCSV);
+// Admin & Department Officer CSV export
+router.get('/export/csv', protect, authorize('admin', 'department_officer'), exportCSV);
 
 // Track specific complaint (publicly visible by ID for tracking progress)
 router.get('/:id', optionalAuth, getComplaintById);
@@ -28,8 +28,8 @@ router.get('/:id', optionalAuth, getComplaintById);
 // Delete complaint (admin or author owner)
 router.delete('/:id', protect, deleteComplaint);
 
-// Admin-only status change
-router.patch('/:id/status', protect, authorize('admin'), updateStatus);
+// Admin & Department Officer status change
+router.patch('/:id/status', protect, authorize('admin', 'department_officer'), updateStatus);
 
 // Upvoting
 router.post('/:id/upvote', optionalAuth, upvoteComplaint);

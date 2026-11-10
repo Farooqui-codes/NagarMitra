@@ -1232,6 +1232,25 @@
           <h2>Welcome Back</h2>
           <p class="sub">Login to your NagarMitra account</p>
 
+          <!-- Department Officer Quick Login Shortcuts -->
+          <div class="officer-demo-pills" id="officerQuickPills">
+            <span class="officer-pills-label"><i class="fas fa-building-shield"></i> Officer Demo Logins:</span>
+            <div class="pills-flex">
+              <button type="button" class="demo-pill" onclick="fillOfficerLogin('pwd')" title="PWD Road & Infrastructure Officer">
+                <i class="fas fa-road"></i> PWD
+              </button>
+              <button type="button" class="demo-pill" onclick="fillOfficerLogin('sanitation')" title="Municipal Sanitation & Waste Inspector">
+                <i class="fas fa-broom"></i> Sanitation
+              </button>
+              <button type="button" class="demo-pill" onclick="fillOfficerLogin('jal')" title="Jal Board Water & Sewage Officer">
+                <i class="fas fa-faucet-drip"></i> Jal Board
+              </button>
+              <button type="button" class="demo-pill admin-pill" onclick="fillOfficerLogin('admin')" title="Chief Municipal Administrator">
+                <i class="fas fa-shield-halved"></i> Admin
+              </button>
+            </div>
+          </div>
+
           <form onsubmit="loginUser(event)">
             <label><i class="fas fa-envelope"></i> Email</label>
             <input
@@ -1436,6 +1455,24 @@
           </div>
           <div id="imagePreview"></div>
 
+          <!-- ======= CITIZEN MOBILE NUMBER FOR LIVE STATUS NOTIFICATIONS ======= -->
+          <div class="loc-field-group full-width" style="margin-top: 14px; margin-bottom: 14px;">
+            <label for="citizenPhone" style="font-weight: 600; color: var(--text);">
+              <i class="fab fa-whatsapp" style="color: #25d366; font-size: 15px;"></i> WhatsApp / Mobile Number (For Live Status Alerts)
+            </label>
+            <input
+              type="tel"
+              id="citizenPhone"
+              name="citizenPhone"
+              placeholder="e.g. 9876543210 (10-digit mobile number for WhatsApp &amp; SMS alerts)"
+              maxlength="15"
+              autocomplete="tel"
+            />
+            <small style="color: var(--text-dim); font-size: 11.5px; display: flex; align-items: center; gap: 5px; margin-top: 4px;">
+              <i class="fas fa-bell" style="color: #0284c7;"></i> You will automatically receive real-time WhatsApp &amp; SMS updates as your complaint progresses.
+            </small>
+          </div>
+
           <!-- ======= STRUCTURED MULTI-FIELD ADDRESS ======= -->
           <label><i class="fas fa-map-marker-alt"></i> Location / Address *</label>
 
@@ -1636,19 +1673,20 @@
       <div id="myComplaintsList" class="my-complaints-container"></div>
     </section>
 
-    <!-- ================= ADMIN ================= -->
+    <!-- ================= ADMIN / OFFICER PORTAL ================= -->
     <section id="admin" class="page">
-      <div class="page-header">
-        <span>ADMIN PANEL</span>
-        <h1>Complaint Management</h1>
-        <p>Monitor, assign and update public complaints.</p>
+      <div class="page-header" id="adminPageHeader">
+        <span id="adminPageTag">ADMIN PANEL</span>
+        <h1 id="adminPageTitle">Complaint Management</h1>
+        <p id="adminPageSubtitle">Monitor, assign and update public complaints.</p>
+        <div id="officerBadgeContainer" style="margin-top: 8px;"></div>
       </div>
 
       <div class="stats-grid">
         <div class="stat-card">
           <span><i class="fas fa-clipboard-list"></i></span>
           <h3 id="totalComplaints">0</h3>
-          <p>Total Complaints</p>
+          <p id="labelTotalComplaints">Total Complaints</p>
         </div>
         <div class="stat-card">
           <span><i class="fas fa-hourglass-half"></i></span>
@@ -1672,8 +1710,15 @@
 
       <div class="admin-table-container">
         <div class="table-header">
-          <h2><i class="fas fa-table-list"></i> All Complaints</h2>
+          <h2 id="adminTableHeading"><i class="fas fa-table-list"></i> All Complaints</h2>
           <div class="table-actions">
+            <select id="adminDeptFilter" onchange="filterAdminTable()" style="display: none;">
+              <option value="">All Departments</option>
+              <option value="PWD">PWD (Roads &amp; Bridges)</option>
+              <option value="Sanitation">Sanitation (Waste &amp; Cleanliness)</option>
+              <option value="Jal Board">Jal Board (Water &amp; Sewage)</option>
+              <option value="Electricity">Electricity &amp; Lighting</option>
+            </select>
             <input
               type="text"
               id="adminSearch"

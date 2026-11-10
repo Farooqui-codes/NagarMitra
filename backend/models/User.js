@@ -28,8 +28,13 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type:    String,
-        enum:    ['local_user', 'admin', 'citizen', 'user'],
+        enum:    ['local_user', 'admin', 'citizen', 'user', 'department_officer'],
         default: 'local_user'
+    },
+    department: {
+        type:    String,
+        default: '',
+        trim:    true
     },
     createdAt: {
         type:    Date,

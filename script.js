@@ -262,6 +262,7 @@ function normalizeComplaint (c) {
     image: getFullImageUrl(c.imageUrl || c.image || ''),
     user: c.citizenEmail || c.user || '',
     userName: c.citizenName || c.userName || 'Anonymous Citizen',
+    citizenPhone: c.citizenPhone || '',
     createdAt: c.createdAt
       ? new Date(c.createdAt).toLocaleDateString()
       : new Date().toLocaleDateString(),
@@ -427,8 +428,8 @@ function goToMyComplaints () {
 
 function goToAdmin () {
   const user = safeStorage('problemXCurrentUser')
-  if (!user || user.role !== 'admin') {
-    showToast('Admin access required. Please login as admin.', 'error')
+  if (!user || (user.role !== 'admin' && user.role !== 'department_officer')) {
+    showToast('Officer/Admin access required. Please login with an authorized account.', 'error')
     showPage('login')
     return
   }
@@ -668,19 +669,53 @@ async function loginUser (event) {
     if (loginForm) loginForm.reset()
 
     setTimeout(() => {
-      if (res.user.role === 'admin') showPage('admin')
+      if (res.user.role === 'admin' || res.user.role === 'department_officer') showPage('admin')
       else showPage('home')
     }, 400)
     return
   }
 
-  if (res && res.dbOffline) {
-    showToast('Database is currently offline. Unable to sign in right now.', 'error')
-    return
-  }
+  if (res && (res.dbOffline || res.backendOffline)) {
+    // Offline / Demo Officer fallback
+    if (email === 'pwd.officer@nagarmitra.gov.in') {
+      const demoUser = {
+        name: 'Er. Rajesh Sharma (PWD)',
+        email: 'pwd.officer@nagarmitra.gov.in',
+        role: 'department_officer',
+        department: 'Public Works Department (PWD)'
+      }
+      safeStorage('problemXCurrentUser', demoUser)
+      showToast('Logged in as PWD Officer (Offline Mode)', 'success')
+      updateAuthUI()
+      setTimeout(() => showPage('admin'), 400)
+      return
+    } else if (email === 'sanitation.officer@nagarmitra.gov.in') {
+      const demoUser = {
+        name: 'Sunil Patil (Sanitation)',
+        email: 'sanitation.officer@nagarmitra.gov.in',
+        role: 'department_officer',
+        department: 'Municipal Sanitation Dept'
+      }
+      safeStorage('problemXCurrentUser', demoUser)
+      showToast('Logged in as Sanitation Inspector (Offline Mode)', 'success')
+      updateAuthUI()
+      setTimeout(() => showPage('admin'), 400)
+      return
+    } else if (email === 'jal.officer@nagarmitra.gov.in') {
+      const demoUser = {
+        name: 'Anita Verma (Jal Board)',
+        email: 'jal.officer@nagarmitra.gov.in',
+        role: 'department_officer',
+        department: 'Jal Board / Water Supply Division'
+      }
+      safeStorage('problemXCurrentUser', demoUser)
+      showToast('Logged in as Jal Board Officer (Offline Mode)', 'success')
+      updateAuthUI()
+      setTimeout(() => showPage('admin'), 400)
+      return
+    }
 
-  if (res && res.backendOffline) {
-    showToast('Backend server is unreachable. Please verify backend is running on http://localhost:5000.', 'error')
+    showToast('Database or server is offline. Please try again shortly.', 'error')
     return
   }
 
@@ -731,11 +766,18 @@ function updateAuthUI () {
 
   // Enforce Navigation Item visibility based on verified role
   const isAdmin = user && user.role === 'admin'
+  const isOfficer = user && user.role === 'department_officer'
+  const canAccessAdmin = isAdmin || isOfficer
   const isLoggedIn = !!user
 
   const adminNavs = document.querySelectorAll('#navLinkAdmin, #mobileNavLinkAdmin')
   adminNavs.forEach(el => {
-    el.style.display = isAdmin ? '' : 'none'
+    el.style.display = canAccessAdmin ? '' : 'none'
+    if (isOfficer) {
+      el.textContent = 'Officer Portal'
+    } else {
+      el.textContent = 'Admin Panel'
+    }
   })
 
   const myReportNavs = document.querySelectorAll('#navLinkMyReports, #mobileNavLinkMyReports')
@@ -772,6 +814,14 @@ function updateAuthUI () {
             </div>
           </div>
         </div>
+        <button
+          class="lang-toggle-btn"
+          id="langToggleBtn"
+          onclick="toggleLanguage()"
+          title="Switch Language / भाषा बदलें"
+        >
+          <i class="fas fa-language"></i> <span id="currentLangLabel">हिन्दी</span>
+        </button>
         <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
             <i class="fas fa-moon" id="themeIcon"></i>
         </button>`
@@ -779,14 +829,18 @@ function updateAuthUI () {
   const mobileAuth = document.getElementById('mobileAuthActions')
 
   if (user) {
-    const roleBadge = isAdmin
-      ? '<span style="font-size:10px;background:rgba(239,68,68,0.2);color:#fca5a5;padding:2px 6px;border-radius:99px;margin-left:6px;border:1px solid rgba(239,68,68,0.4);">Admin</span>'
-      : '<span style="font-size:10px;background:rgba(14,165,233,0.15);color:#7dd3fc;padding:2px 6px;border-radius:99px;margin-left:6px;border:1px solid rgba(14,165,233,0.3);">User</span>'
+    let roleBadge = '<span class="role-badge badge-citizen">Citizen</span>'
+    if (isAdmin) {
+      roleBadge = '<span class="role-badge badge-admin"><i class="fas fa-shield"></i> Admin</span>'
+    } else if (isOfficer) {
+      const deptShort = user.department ? user.department.replace(/Department|Division|Board/gi, '').trim() : 'Officer'
+      roleBadge = `<span class="role-badge badge-officer"><i class="fas fa-building"></i> ${escapeHTML(deptShort)}</span>`
+    }
 
     navActions.innerHTML = `
             ${themeControls}
-            <div class="user-chip">
-                <i class="fas ${isAdmin ? 'fa-user-shield' : 'fa-user-circle'}"></i>
+            <div class="user-chip" onclick="showPage('${canAccessAdmin ? 'admin' : 'myComplaints'}')" style="cursor:pointer;" title="${canAccessAdmin ? 'Open Portal' : 'View My Reports'}">
+                <i class="fas ${isAdmin ? 'fa-user-shield' : isOfficer ? 'fa-building-user' : 'fa-user-circle'}"></i>
                 <span>${escapeHTML(user.name)}</span>
                 ${roleBadge}
             </div>
@@ -797,7 +851,7 @@ function updateAuthUI () {
     if (mobileAuth) {
       mobileAuth.innerHTML = `
             <div class="user-chip" style="justify-content:center;margin-bottom:8px;padding:9px 14px;">
-                <i class="fas ${isAdmin ? 'fa-user-shield' : 'fa-user-circle'}"></i>
+                <i class="fas ${isAdmin ? 'fa-user-shield' : isOfficer ? 'fa-building-user' : 'fa-user-circle'}"></i>
                 <span>${escapeHTML(user.name)}</span>
                 ${roleBadge}
             </div>
@@ -1309,6 +1363,7 @@ async function submitComplaint (event) {
       imageUrl: fileDataUrl,
       citizenName: currentUser.name,
       citizenEmail: currentUser.email,
+      citizenPhone: document.getElementById('citizenPhone')?.value.trim() || currentUser.phone || '',
       ...(utm ? { utm } : {})
     })
   })
@@ -1884,15 +1939,42 @@ function trackSpecific (id) {
   setTimeout(() => trackComplaint(), 300)
 }
 
-/* =========================
-   ADMIN DASHBOARD (API + Local)
-========================= */
+// =========================
+// ADMIN & DEPARTMENT OFFICER DASHBOARD (API + Local)
+// =========================
 async function loadAdminDashboard () {
   const user = safeStorage('problemXCurrentUser')
-  if (!user || user.role !== 'admin') {
-    showToast('Administrator privileges required.', 'error')
+  if (!user || (user.role !== 'admin' && user.role !== 'department_officer')) {
+    showToast('Officer or Administrator privileges required.', 'error')
     showPage('login')
     return
+  }
+
+  const isOfficer = user && user.role === 'department_officer'
+  const officerBadge = document.getElementById('officerBadgeContainer')
+  const pageTag = document.getElementById('adminPageTag')
+  const pageTitle = document.getElementById('adminPageTitle')
+  const pageSub = document.getElementById('adminPageSubtitle')
+  const deptFilter = document.getElementById('adminDeptFilter')
+
+  if (isOfficer) {
+    if (pageTag) pageTag.textContent = 'DEPARTMENT OFFICER PORTAL'
+    if (pageTitle) pageTitle.textContent = `${user.department || 'Department'} Dashboard`
+    if (pageSub) pageSub.textContent = `Viewing & resolving public grievances in ${user.department || 'your department'}.`
+    if (officerBadge) {
+      officerBadge.innerHTML = `
+        <div class="officer-identity-pill">
+          <i class="fas fa-id-badge"></i> Officer: <strong>${escapeHTML(user.name)}</strong>
+          <span class="officer-dept-tag">${escapeHTML(user.department)}</span>
+        </div>`
+    }
+    if (deptFilter) deptFilter.style.display = 'none'
+  } else {
+    if (pageTag) pageTag.textContent = 'ADMIN PANEL'
+    if (pageTitle) pageTitle.textContent = 'Complaint Management'
+    if (pageSub) pageSub.textContent = 'Monitor, assign and update public complaints across all municipal departments.'
+    if (officerBadge) officerBadge.innerHTML = ''
+    if (deptFilter) deptFilter.style.display = 'inline-block'
   }
 
   let complaints = []
@@ -1903,21 +1985,34 @@ async function loadAdminDashboard () {
   const statsRes = await apiFetch('/stats')
 
   if (compRes && compRes.forbidden) {
-    showToast('Access denied: You do not have administrator permissions.', 'error')
+    showToast('Access denied: You do not have permissions for this portal.', 'error')
     showPage('home')
     return
   }
 
   if (compRes && compRes.dbOffline) {
-    showToast('Database is offline. Unable to load admin complaints.', 'error')
+    showToast('Database is offline. Loading cached complaints.', 'info')
+    complaints = getComplaints().map(normalizeComplaint)
   } else if (compRes && compRes.backendOffline) {
-    showToast('Backend server is unreachable.', 'error')
+    showToast('Backend server is unreachable. Loading cached complaints.', 'info')
+    complaints = getComplaints().map(normalizeComplaint)
   } else if (compRes && compRes.success && Array.isArray(compRes.data)) {
     complaints = compRes.data.map(normalizeComplaint)
     window._lastAdminComplaints = complaints
+  } else {
+    complaints = getComplaints().map(normalizeComplaint)
   }
 
-  if (statsRes && statsRes.success && statsRes.data) {
+  // If department officer, scope complaints to officer's department
+  if (isOfficer && user.department) {
+    const key = user.department.toLowerCase().replace(/department|dept|\(pwd\)|\/|\s+/gi, '').trim()
+    complaints = complaints.filter(c => {
+      const cDept = (c.department || '').toLowerCase()
+      return cDept.includes(key) || (key.length > 3 && cDept.includes(key.slice(0, 4)))
+    })
+  }
+
+  if (statsRes && statsRes.success && statsRes.data && !isOfficer) {
     stats = statsRes.data
   }
 
@@ -1981,20 +2076,23 @@ function renderAdminTable (complaints) {
                 <td colspan="7">
                     <div class="empty-state">
                         <i class="fas fa-inbox"></i>
-                        <p>No complaints found.</p>
-                        <p style="font-size:12px;color:#56687f;">Complaints will appear here once submitted.</p>
+                        <p>No complaints found for this department.</p>
+                        <p style="font-size:12px;color:#56687f;">Complaints will appear here once submitted by citizens.</p>
                     </div>
                 </td>
             </tr>`
     return
   }
 
+  const currentUser = safeStorage('problemXCurrentUser')
+  const isAdmin = currentUser && currentUser.role === 'admin'
+
   table.innerHTML = complaints
     .map(
       c => `
-        <tr>
+        <tr class="admin-complaint-row">
             <td>
-                ${escapeHTML(c.id || c.complaintId)}
+                <span class="row-complaint-id">${escapeHTML(c.id || c.complaintId)}</span>
                 ${
                   c.image
                     ? '<i class="fas fa-image photo-indicator" title="Has photo"></i>'
@@ -2006,10 +2104,10 @@ function renderAdminTable (complaints) {
                     : ''
                 }
             </td>
-            <td>${escapeHTML(c.category)}</td>
+            <td><span class="category-pill">${escapeHTML(c.category)}</span></td>
             <td>${escapeHTML(c.location)}</td>
-            <td>${escapeHTML(c.severity)}</td>
-            <td>${escapeHTML(c.department)}</td>
+            <td><span class="severity-pill sev-${(c.severity || 'Medium').toLowerCase()}">${escapeHTML(c.severity || 'Medium')}</span></td>
+            <td><span class="dept-name-tag">${escapeHTML(c.department || 'Municipal')}</span></td>
             <td>
                 <div class="status-cell">
                     <span class="badge-status badge-${(c.status || '').replace(
@@ -2024,17 +2122,26 @@ function renderAdminTable (complaints) {
                 </div>
             </td>
             <td>
-                <div style="display:flex;gap:6px;align-items:center;">
+                <div class="row-action-buttons" style="display:flex;gap:6px;align-items:center;">
                     <button class="view-btn" onclick="viewComplaint('${escapeHTML(
                       c.id || c.complaintId
                     )}')">
                         <i class="fas fa-eye"></i> View
                     </button>
-                    <button class="delete-btn" title="Delete complaint" onclick="confirmDeleteComplaint('${escapeHTML(
+                    <button class="notif-btn" title="Send WhatsApp & SMS Status Alert to Citizen" onclick="openNotifyModal('${escapeHTML(
                       c.id || c.complaintId
                     )}')">
-                        <i class="fas fa-trash-alt"></i>
+                        <i class="fab fa-whatsapp"></i> Alert
                     </button>
+                    ${
+                      isAdmin
+                        ? `<button class="delete-btn" title="Delete complaint" onclick="confirmDeleteComplaint('${escapeHTML(
+                            c.id || c.complaintId
+                          )}')">
+                            <i class="fas fa-trash-alt"></i>
+                          </button>`
+                        : ''
+                    }
                 </div>
             </td>
         </tr>
@@ -2044,9 +2151,23 @@ function renderAdminTable (complaints) {
 }
 
 function filterAdminTable () {
-  const search = document.getElementById('adminSearch').value.toLowerCase()
-  const filter = document.getElementById('adminFilter').value
+  const search = document.getElementById('adminSearch')?.value.toLowerCase() || ''
+  const filter = document.getElementById('adminFilter')?.value || ''
+  const deptFilter = document.getElementById('adminDeptFilter')?.value || ''
   let complaints = window._lastAdminComplaints || getComplaints()
+
+  const user = safeStorage('problemXCurrentUser')
+  if (user && user.role === 'department_officer' && user.department) {
+    const key = user.department.toLowerCase().replace(/department|dept|\(pwd\)|\/|\s+/gi, '').trim()
+    complaints = complaints.filter(c => {
+      const cDept = (c.department || '').toLowerCase()
+      return cDept.includes(key) || (key.length > 3 && cDept.includes(key.slice(0, 4)))
+    })
+  } else if (deptFilter) {
+    complaints = complaints.filter(c =>
+      (c.department || '').toLowerCase().includes(deptFilter.toLowerCase())
+    )
+  }
 
   if (search) {
     complaints = complaints.filter(
@@ -2075,12 +2196,16 @@ async function updateStatus (id, newStatus) {
     method: 'PATCH',
     body: JSON.stringify({
       status: newStatus,
-      note: `Status updated to ${newStatus} by municipal administrator.`
+      note: `Status updated to ${newStatus}.`
     })
   })
 
   if (res && res.success) {
-    showToast(`Status updated to "${newStatus}" on Server!`, 'success')
+    showToast(`Status updated to "${newStatus}"!`, 'success')
+    // Open Automatic Citizen Notification Modal
+    setTimeout(() => {
+      openNotifyModal(id, newStatus, res.notification)
+    }, 350)
   } else {
     // 2. Local Fallback
     const complaints = getComplaints()
@@ -2091,10 +2216,163 @@ async function updateStatus (id, newStatus) {
       c.history.push({ status: newStatus, date: new Date().toLocaleString() })
       saveComplaints(complaints)
       showToast(`Status updated to "${newStatus}"`, 'success')
+      setTimeout(() => {
+        openNotifyModal(id, newStatus)
+      }, 350)
     }
   }
 
   loadAdminDashboard()
+}
+
+/**
+ * ========================================================
+ * WHATSAPP & SMS AUTOMATIC NOTIFICATION MODAL
+ * ========================================================
+ */
+function openNotifyModal (id, changedStatus, notifData) {
+  const complaints = window._lastAdminComplaints || getComplaints()
+  const c = complaints.find(x => (x.id || x.complaintId) === id) || {}
+
+  const compId = c.id || c.complaintId || id
+  const citizenName = c.userName || c.citizenName || notifData?.recipientName || 'Citizen'
+  const citizenPhone = c.citizenPhone || notifData?.recipientPhone || ''
+  const status = changedStatus || c.status || 'In Progress'
+  const dept = c.department || 'Municipal Department'
+  const cat = c.category || 'Civic Issue'
+
+  const defaultMsg = notifData?.message ||
+    `*NagarMitra Grievance Status Alert*\n\n` +
+    `Namaste ${citizenName},\n` +
+    `Your complaint *#${compId}* (${cat}) status has been updated to *${status}*.\n\n` +
+    `Department: ${dept}\n\n` +
+    `Track live progress & download official receipt:\n` +
+    `https://problem-x.onrender.com/?track=${encodeURIComponent(compId)}`
+
+  openModal(`
+    <div class="notify-modal-content">
+      <div class="notify-modal-header">
+        <div class="notify-icon-circle">
+          <i class="fab fa-whatsapp"></i>
+        </div>
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem;">WhatsApp &amp; SMS Status Alert</h2>
+          <p style="margin: 2px 0 0; font-size: 12px; color: var(--text-dim);">Send official resolution update to complainant</p>
+        </div>
+      </div>
+
+      <div class="notify-details-grid">
+        <div class="notify-field">
+          <label><i class="fas fa-user"></i> Citizen Name:</label>
+          <strong>${escapeHTML(citizenName)}</strong>
+        </div>
+        <div class="notify-field">
+          <label><i class="fas fa-hashtag"></i> Complaint ID:</label>
+          <strong style="color: var(--primary);">${escapeHTML(compId)}</strong>
+        </div>
+        <div class="notify-field">
+          <label><i class="fas fa-tag"></i> New Status:</label>
+          <span class="badge-status badge-${status.replace(/\s/g, '')}">${escapeHTML(status)}</span>
+        </div>
+        <div class="notify-field">
+          <label><i class="fas fa-building"></i> Department:</label>
+          <span>${escapeHTML(dept)}</span>
+        </div>
+      </div>
+
+      <div style="margin: 14px 0 6px;">
+        <label for="notifyPhoneInput" style="font-size: 12px; font-weight: 600; color: var(--text);">
+          <i class="fas fa-mobile-screen"></i> Complainant Mobile Number (10 Digits):
+        </label>
+        <div style="display: flex; gap: 8px; margin-top: 4px;">
+          <span style="display: inline-flex; align-items: center; padding: 0 12px; background: var(--card-border); border-radius: 8px; font-size: 13px; font-weight: 700;">+91</span>
+          <input type="tel" id="notifyPhoneInput" value="${escapeHTML(citizenPhone.replace(/\D/g, '').slice(-10))}" placeholder="Enter 10-digit mobile number" style="flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 14px;">
+        </div>
+      </div>
+
+      <div style="margin: 10px 0;">
+        <label for="notifyMsgArea" style="font-size: 12px; font-weight: 600; color: var(--text);">
+          <i class="fas fa-comment-dots"></i> Message Preview:
+        </label>
+        <textarea id="notifyMsgArea" rows="6" style="width: 100%; margin-top: 4px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); font-size: 12px; font-family: monospace; resize: vertical; line-height: 1.5;">${escapeHTML(defaultMsg)}</textarea>
+      </div>
+
+      <div class="notify-actions-row">
+        <button class="btn btn-wa-send" onclick="sendWhatsAppAlert('${escapeHTML(compId)}')">
+          <i class="fab fa-whatsapp"></i> Send on WhatsApp
+        </button>
+        <button class="btn btn-sms-send" onclick="sendSmsAlert('${escapeHTML(compId)}')">
+          <i class="fas fa-comment-sms"></i> Send via SMS
+        </button>
+        <button class="btn secondary" onclick="copyNotifyMessage()">
+          <i class="fas fa-copy"></i> Copy Message
+        </button>
+      </div>
+    </div>
+  `)
+}
+
+function sendWhatsAppAlert (compId) {
+  const phone = document.getElementById('notifyPhoneInput')?.value.replace(/\D/g, '').slice(-10) || ''
+  const msg = document.getElementById('notifyMsgArea')?.value || ''
+  if (!phone || phone.length !== 10) {
+    showToast('Please enter a valid 10-digit mobile number', 'error')
+    document.getElementById('notifyPhoneInput')?.focus()
+    return
+  }
+  const url = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`
+  window.open(url, '_blank')
+  showToast('WhatsApp Chat opened with pre-filled alert! 🚀', 'success')
+}
+
+function sendSmsAlert (compId) {
+  const phone = document.getElementById('notifyPhoneInput')?.value.replace(/\D/g, '').slice(-10) || ''
+  const msg = document.getElementById('notifyMsgArea')?.value || ''
+  if (!phone || phone.length !== 10) {
+    showToast('Please enter a valid 10-digit mobile number', 'error')
+    document.getElementById('notifyPhoneInput')?.focus()
+    return
+  }
+  const url = `sms:+91${phone}?body=${encodeURIComponent(msg)}`
+  window.open(url, '_blank')
+  showToast('SMS App opened with pre-filled alert! 📱', 'success')
+}
+
+function copyNotifyMessage () {
+  const msg = document.getElementById('notifyMsgArea')?.value || ''
+  if (!msg) return
+  navigator.clipboard.writeText(msg).then(() => {
+    showToast('Alert message copied to clipboard! 📋', 'success')
+  }).catch(() => {
+    showToast('Failed to copy text', 'error')
+  })
+}
+
+/**
+ * Quick Auto-fill for Officer Logins
+ */
+function fillOfficerLogin (type) {
+  const emailInput = document.getElementById('loginEmail')
+  const passInput = document.getElementById('loginPassword')
+  if (!emailInput || !passInput) return
+
+  if (type === 'pwd') {
+    emailInput.value = 'pwd.officer@nagarmitra.gov.in'
+    passInput.value = 'Officer@123'
+    showToast('PWD Officer credentials selected! Click Login.', 'info')
+  } else if (type === 'sanitation') {
+    emailInput.value = 'sanitation.officer@nagarmitra.gov.in'
+    passInput.value = 'Officer@123'
+    showToast('Sanitation Inspector credentials selected! Click Login.', 'info')
+  } else if (type === 'jal') {
+    emailInput.value = 'jal.officer@nagarmitra.gov.in'
+    passInput.value = 'Officer@123'
+    showToast('Jal Board Officer credentials selected! Click Login.', 'info')
+  } else if (type === 'admin') {
+    emailInput.value = 'admin@nagarmitra.com'
+    passInput.value = 'Admin@12345'
+    showToast('Chief Administrator credentials selected! Click Login.', 'info')
+  }
 }
 
 function viewComplaint (id) {
@@ -2131,7 +2409,11 @@ function viewComplaint (id) {
             ? `<img src="${c.image}" alt="Complaint Image" onclick="openLightbox('${c.image}')">`
             : ''
         }
-        <div style="display:flex;gap:10px;margin-top:20px;">
+        <p><strong>Mobile (Alerts):</strong> ${escapeHTML(c.citizenPhone || 'Not Provided')}</p>
+        <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+            <button class="btn btn-wa-send full" onclick="closeModal({target:{id:'modalOverlay'}}); openNotifyModal('${escapeHTML(compId)}');">
+                <i class="fab fa-whatsapp"></i> Send WhatsApp / SMS Alert
+            </button>
             <button class="btn secondary full" onclick="closeModal({target:{id:'modalOverlay'}})">
                 <i class="fas fa-times"></i> Close
             </button>
@@ -2189,10 +2471,10 @@ async function exportCSV () {
     return
   }
 
-  // Security check: Only administrators can export admin complaints
+  // Security check: Only administrators or department officers can export complaints
   const currentUser = safeStorage('problemXCurrentUser')
-  if (!currentUser || currentUser.role !== 'admin') {
-    showToast('Access denied: Administrator privileges required to export data.', 'error')
+  if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'department_officer')) {
+    showToast('Access denied: Officer or Administrator privileges required to export data.', 'error')
     return
   }
 

@@ -51,7 +51,10 @@ const seedAdmin = async () => {
             console.log(`✅ Designated Administrator created: ${adminEmail}`);
         }
 
-        console.log('🔒 Administrator bootstrap complete. Credentials loaded securely from environment.');
+        const { ensureDefaultOfficers } = require('./config/seedOfficers');
+        await ensureDefaultOfficers();
+
+        console.log('🔒 Administrator & Department Officers bootstrap complete.');
         process.exit(0);
     } catch (err) {
         console.error('❌ Error bootstrapping admin:', err.message);
