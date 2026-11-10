@@ -1143,6 +1143,23 @@
               <!-- Social Links -->
               <div class="dev-social-links">
                 <a
+                  href="https://farooqui-umair-portfolio.fmdumair07.workers.dev/"
+                  class="dev-social-btn dev-portfolio"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Visit My Profile"
+                  onclick="
+                    if (typeof trackEvent === 'function') {
+                      trackEvent('social_click', {
+                        platform: 'portfolio',
+                        source: 'developer',
+                      });
+                    }
+                  "
+                >
+                  <i class="fas fa-user-circle"></i> Visit My Profile
+                </a>
+                <a
                   href="https://www.facebook.com/profile.php?id=61561042082791"
                   class="dev-social-btn dev-fb"
                   target="_blank"
@@ -1989,7 +2006,7 @@
           </p>
           <div class="footer-bottom-right">
             <span class="footer-dev-badge"
-              >Built by <strong>Umair Farooqui</strong></span
+              >Built by <a href="https://farooqui-umair-portfolio.fmdumair07.workers.dev/" target="_blank" rel="noopener noreferrer" class="footer-dev-link" title="Visit Umair Farooqui's Profile"><strong>Umair Farooqui</strong></a></span
             >
             <span class="footer-bullet">•</span>
             <span class="footer-updated" id="footerUpdated"></span>

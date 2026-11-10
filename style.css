@@ -2428,8 +2428,20 @@ footer {
     color: var(--text-muted);
 }
 
-.footer-dev-badge strong {
-    color: var(--primary-light);
+.footer-dev-badge strong,
+.footer-dev-link strong {
+    color: var(--primary-light) !important;
+}
+
+.footer-dev-link {
+    color: inherit;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
+}
+
+.footer-dev-link:hover strong {
+    text-decoration: underline;
+    opacity: 0.9;
 }
 
 .footer-bullet {
@@ -3607,6 +3619,18 @@ footer {
     transform: translateY(-3px);
     opacity: 0.92;
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+
+.dev-portfolio {
+    background: linear-gradient(135deg, #0284c7, #6366f1);
+    color: #ffffff !important;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+}
+
+.dev-portfolio:hover {
+    background: linear-gradient(135deg, #0369a1, #4f46e5);
+    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.55);
 }
 
 .dev-fb {
