@@ -893,19 +893,7 @@ function updateAuthUI () {
    HERO STATS (Live from API)
 ========================= */
 async function loadHeroStats () {
-  // 1. Try fetching from Backend API
-  const res = await apiFetch('/stats')
-  if (res && res.success && res.data) {
-    const t = document.getElementById('heroTotal')
-    const r = document.getElementById('heroResolved')
-    const p = document.getElementById('heroPending')
-    if (t) t.textContent = res.data.total
-    if (r) r.textContent = res.data.resolved
-    if (p) p.textContent = res.data.pending
-    return
-  }
-
-  // 2. Fallback to Local Storage
+  // 1. Immediately populate from local cache with 0ms delay
   const complaints = getComplaints()
   const total = complaints.length
   const resolved = complaints.filter(
@@ -919,6 +907,16 @@ async function loadHeroStats () {
   if (t) t.textContent = total
   if (r) r.textContent = resolved
   if (p) p.textContent = pending
+
+  // 2. Refresh with latest Backend API stats in background
+  try {
+    const res = await apiFetch('/stats')
+    if (res && res.success && res.data) {
+      if (t) t.textContent = res.data.total
+      if (r) r.textContent = res.data.resolved
+      if (p) p.textContent = res.data.pending
+    }
+  } catch (e) {}
 }
 
 /* =========================
@@ -3304,7 +3302,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const resetTop = () =>
-    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
   resetTop()
   window.addEventListener('pageshow', resetTop, { passive: true })
 

@@ -203,6 +203,8 @@ textarea {
     border-radius: 50%;
     animation: rise 25s linear infinite;
     bottom: -150px;
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
 }
 
 .bg-animation span:nth-child(1) {
@@ -893,13 +895,12 @@ textarea {
     min-height: calc(100vh - 70px);
     position: relative;
     z-index: 1;
-    opacity: 0;
-    transform: translateY(18px);
-    animation: fadeInUp 0.45s ease forwards;
 }
 
 .page.active {
     display: block;
+    opacity: 1;
+    transform: none;
 }
 
 @keyframes fadeInUp {
@@ -5023,17 +5024,13 @@ body[data-theme="light"] .dev-gh {
     }
 }
 
-/* Apply smooth, GPU-composited animations */
-.page.active .hero-content {
-    animation: smoothFadeUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.page.active .problem-card {
-    animation: smoothFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
+/* Instant, Zero-Delay Display for All Page Sections & Cards */
+.page.active .hero-content,
+.page.active .problem-card,
 .page.active .stat-card {
-    animation: smoothFadeUp 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
 }
 
 .admin-table-container,
