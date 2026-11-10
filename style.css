@@ -4728,9 +4728,6 @@ body[data-theme="light"] .dev-gh {
     .navbar .lang-toggle-btn {
         display: none !important;
     }
-    .palette-dropdown-wrapper {
-        display: none !important;
-    }
     .navbar {
         padding: 10px 12px !important;
     }
