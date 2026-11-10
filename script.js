@@ -263,6 +263,14 @@ function normalizeComplaint (c) {
     user: c.citizenEmail || c.user || '',
     userName: c.citizenName || c.userName || 'Anonymous Citizen',
     citizenPhone: c.citizenPhone || '',
+    ward: c.ward || 'Ward 1 - Central Zone',
+    slaHours: c.slaHours || 48,
+    slaDeadline: c.slaDeadline || null,
+    isEscalated: !!c.isEscalated,
+    resolvedImageUrl: getFullImageUrl(c.resolvedImageUrl || ''),
+    reopenCount: c.reopenCount || 0,
+    citizenRating: c.citizenRating || 0,
+    citizenFeedback: c.citizenFeedback || '',
     createdAt: c.createdAt
       ? new Date(c.createdAt).toLocaleDateString()
       : new Date().toLocaleDateString(),
@@ -1350,6 +1358,7 @@ async function submitComplaint (event) {
 
   // Attach UTM data if available
   const utm = getStoredUTM()
+  const ward = document.getElementById('locWard')?.value.trim() || 'Ward 1 - Central Zone'
 
   // 1. Submit to Backend API
   const backendRes = await apiFetch('/complaints', {
@@ -1358,6 +1367,7 @@ async function submitComplaint (event) {
       category,
       description,
       location,
+      ward,
       severity: analysis.severity,
       department: analysis.department,
       imageUrl: fileDataUrl,
@@ -1534,6 +1544,37 @@ function copyAndTrack (id) {
 }
 
 /* =========================
+   SLA BADGE HELPER & CALCULATION
+========================= */
+function getSLABadgeHTML (complaint) {
+  if (!complaint) return ''
+  const isResolved = complaint.status === 'Resolved' || complaint.status === 'Closed'
+  const createdMs = complaint.createdAt ? new Date(complaint.createdAt).getTime() : Date.now()
+  const slaHours = complaint.slaHours || 48
+  const deadlineMs = complaint.slaDeadline
+    ? new Date(complaint.slaDeadline).getTime()
+    : createdMs + slaHours * 3600 * 1000
+  const nowMs = Date.now()
+  const diffMs = deadlineMs - nowMs
+  const diffHours = Math.round(diffMs / (3600 * 1000))
+
+  if (isResolved) {
+    return `<span class="sla-badge sla-resolved"><i class="fas fa-check-double"></i> SLA Met (${slaHours}h target)</span>`
+  }
+
+  if (complaint.isEscalated || diffMs <= 0) {
+    const overdueHrs = Math.max(1, Math.abs(diffHours))
+    return `<span class="sla-badge sla-overdue" title="Escalated to Senior Municipal Commissioner"><i class="fas fa-circle-exclamation fa-beat-fade"></i> OVERDUE (${overdueHrs}h) - ESCALATED</span>`
+  }
+
+  if (diffHours <= 6) {
+    return `<span class="sla-badge sla-warning" title="Urgent SLA Deadline Approaching"><i class="fas fa-clock fa-spin" style="--fa-animation-duration: 4s;"></i> ${diffHours}h left (Urgent)</span>`
+  }
+
+  return `<span class="sla-badge sla-ontrack" title="Within SLA Target"><i class="fas fa-hourglass-start"></i> ${diffHours}h left (${slaHours}h SLA)</span>`
+}
+
+/* =========================
    TRACK COMPLAINT (API + Local)
 ========================= */
 async function trackComplaint () {
@@ -1596,45 +1637,78 @@ async function trackComplaint () {
   })
 
   const compId = complaint.id || complaint.complaintId
+  const beforePhoto = complaint.imageUrl || complaint.image
+  const afterPhoto = complaint.resolvedImageUrl
+  const isResolved = complaint.status === 'Resolved' || complaint.status === 'Closed'
 
   result.innerHTML = `
         <div class="track-card">
-            <p class="track-id"><i class="fas fa-hashtag"></i> ${escapeHTML(
-              compId
-            )}</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+              <p class="track-id" style="margin:0;"><i class="fas fa-hashtag"></i> ${escapeHTML(compId)}</p>
+              ${getSLABadgeHTML(complaint)}
+            </div>
+
+            ${complaint.reopenCount > 0 ? `
+              <div class="reopen-alert-banner">
+                <i class="fas fa-triangle-exclamation"></i>
+                <div>
+                  <strong>Citizen Re-Opened This Grievance (${complaint.reopenCount} Time${complaint.reopenCount > 1 ? 's' : ''})</strong>
+                  <p>Escalated directly to Senior Municipal Commissioner for mandatory on-site audit.</p>
+                </div>
+              </div>
+            ` : ''}
+
             <h2>${escapeHTML(complaint.category)}</h2>
             <p>${escapeHTML(complaint.description)}</p>
             <br>
-            <p><i class="fas fa-map-marker-alt"></i> ${escapeHTML(
-              complaint.location
-            )}</p>
-            <p><i class="fas fa-building"></i> ${escapeHTML(
-              complaint.department || 'Municipal Department'
-            )}</p>
-            <p><i class="fas fa-exclamation-triangle"></i> Severity: <strong>${escapeHTML(
-              complaint.severity || 'Medium'
-            )}</strong></p>
-            <p><i class="fas fa-calendar"></i> ${escapeHTML(
-              complaint.createdAt
-            )}</p>
+            <p><i class="fas fa-landmark" style="color:var(--primary);"></i> Ward / Zone: <strong>${escapeHTML(complaint.ward || 'Ward 1 - Central Zone')}</strong></p>
+            <p><i class="fas fa-map-marker-alt"></i> ${escapeHTML(complaint.location)}</p>
+            <p><i class="fas fa-building"></i> ${escapeHTML(complaint.department || 'Municipal Department')}</p>
+            <p><i class="fas fa-exclamation-triangle"></i> Severity: <strong>${escapeHTML(complaint.severity || 'Medium')}</strong></p>
+            <p><i class="fas fa-calendar"></i> ${escapeHTML(complaint.createdAt)}</p>
 
             <div class="status-line">${statusHTML}</div>
 
-            <p>Current Status: <strong style="color:var(--primary);">${escapeHTML(
-              complaint.status
-            )}</strong></p>
+            <p>Current Status: <strong style="color:var(--primary);">${escapeHTML(complaint.status)}</strong></p>
 
-            ${(complaint.imageUrl || complaint.image) ? `
-              <div style="margin-top:14px;padding:12px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid rgba(255,255,255,0.08);">
-                <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px;"><i class="fas fa-camera"></i> Attached Photo Proof:</p>
-                <img src="${escapeHTML(complaint.imageUrl || complaint.image)}" style="max-height:160px;max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer;object-fit:cover;" onclick="if(typeof openLightbox==='function')openLightbox(this.src)" />
+            <!-- Before vs After Photo Proof Comparison -->
+            <div class="before-after-card">
+              <div class="before-after-header">
+                <h4><i class="fas fa-camera-retro"></i> Grievance Verification &amp; Resolution Proof (फोटो प्रमाण)</h4>
+                <span class="ward-tag-pill"><i class="fas fa-landmark"></i> ${escapeHTML(complaint.ward || 'Ward 1 - Central Zone')}</span>
               </div>
-            ` : ''}
+              <div class="before-after-grid">
+                <div class="photo-box photo-before">
+                  <div class="photo-tag tag-before"><i class="fas fa-user"></i> Citizen Report (पहले)</div>
+                  ${beforePhoto ? `
+                    <img src="${escapeHTML(beforePhoto)}" alt="Before Problem Photo" onclick="if(typeof openLightbox==='function')openLightbox(this.src)" />
+                  ` : `
+                    <div class="no-photo-placeholder"><i class="fas fa-image"></i><span>No photo provided at report</span></div>
+                  `}
+                </div>
+                <div class="photo-box photo-after">
+                  <div class="photo-tag tag-after"><i class="fas fa-certificate"></i> Officer Resolution Proof (काम के बाद)</div>
+                  ${afterPhoto ? `
+                    <img src="${escapeHTML(afterPhoto)}" alt="After Resolution Photo" onclick="if(typeof openLightbox==='function')openLightbox(this.src)" />
+                  ` : `
+                    <div class="no-photo-placeholder ${isResolved ? '' : 'awaiting'}">
+                      <i class="fas ${isResolved ? 'fa-camera' : 'fa-tools fa-spin'}"></i>
+                      <span>${isResolved ? 'Resolution certified on-site' : 'Work in progress - Proof will appear on resolution'}</span>
+                    </div>
+                  `}
+                </div>
+              </div>
+            </div>
 
             <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
               <button class="btn secondary" onclick="downloadComplaintReceipt('${escapeHTML(compId)}')" style="gap:8px;">
                 <i class="fas fa-file-pdf" style="color:#ef4444;"></i> Download Official PDF Receipt (पावती)
               </button>
+              ${isResolved ? `
+                <button class="btn secondary btn-reopen" onclick="promptReopenGrievance('${escapeHTML(compId)}')" style="gap:8px;">
+                  <i class="fas fa-rotate-left" style="color:#f59e0b;"></i> Not Satisfied? Re-Open Grievance (असंतोष? पुनः खोलें)
+                </button>
+              ` : ''}
             </div>
         </div>`
 
@@ -1642,6 +1716,88 @@ async function trackComplaint () {
   loadOwnerActionsForComplaint(complaint, result)
   if (typeof renderResolutionFeedback === 'function') {
     renderResolutionFeedback(complaint, result)
+  }
+}
+
+/* ========================================================
+   CITIZEN RE-OPEN GRIEVANCE & COMMISSIONER ESCALATION
+======================================================== */
+function promptReopenGrievance (id) {
+  openModal(`
+    <div style="padding: 10px 0;">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(245, 158, 11, 0.15); color: #f59e0b; display: grid; place-items: center; font-size: 24px; margin: 0 auto 16px;">
+        <i class="fas fa-rotate-left"></i>
+      </div>
+      <h2 style="margin-bottom: 8px; text-align: center;">Re-Open Grievance #${escapeHTML(id)}</h2>
+      <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 18px; text-align: center; line-height: 1.5;">
+        Not satisfied with the resolution? Re-opening this complaint marks it as <strong>Under Review</strong> and escalates it directly to the <strong>Senior Municipal Commissioner</strong>.
+      </p>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text);">
+          Reason for dissatisfaction / Re-opening *
+        </label>
+        <textarea
+          id="reopenReasonInput"
+          rows="3"
+          placeholder="e.g. Problem returned, pothole was only partially filled, garbage still remains on-site..."
+          style="width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--bg-card); color: var(--text); font-size: 13px; font-family: inherit; resize: vertical;"
+          required
+        ></textarea>
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+        <button class="btn secondary" onclick="closeModal({ target: { id: 'modalOverlay' } })">
+          Cancel
+        </button>
+        <button class="btn primary" style="background: #f59e0b; border-color: #f59e0b; color: #fff;" onclick="submitReopenGrievance('${escapeHTML(id)}')">
+          <i class="fas fa-paper-plane"></i> Submit &amp; Escalate
+        </button>
+      </div>
+    </div>
+  `)
+}
+
+async function submitReopenGrievance (id) {
+  const reasonInput = document.getElementById('reopenReasonInput')
+  const reason = reasonInput ? reasonInput.value.trim() : ''
+  if (!reason) {
+    showToast('Please state the reason for re-opening.', 'error')
+    return
+  }
+
+  closeModal({ target: { id: 'modalOverlay' } })
+  showToast('Re-opening grievance & escalating to Senior Commissioner...', 'info')
+
+  const res = await apiFetch(`/complaints/${encodeURIComponent(id)}/reopen`, {
+    method: 'POST',
+    body: JSON.stringify({ reason })
+  })
+
+  if (res && res.success) {
+    showToast('Grievance re-opened and escalated successfully!', 'success')
+  } else {
+    // Fallback to local cache
+    const complaints = getComplaints()
+    const c = complaints.find(x => (x.id || x.complaintId) === id)
+    if (c) {
+      c.status = 'Under Review'
+      c.isEscalated = true
+      c.reopenCount = (c.reopenCount || 0) + 1
+      if (!c.history) c.history = []
+      c.history.push({
+        status: 'Under Review',
+        note: `Citizen Re-opened: ${reason}`,
+        date: new Date().toLocaleDateString()
+      })
+      saveComplaints(complaints)
+      showToast('Grievance re-opened and escalated in local records!', 'success')
+    }
+  }
+
+  // Refresh current track view
+  const trackIdEl = document.getElementById('trackId')
+  if (trackIdEl) {
+    trackIdEl.value = id
+    trackComplaint()
   }
 }
 
@@ -2063,7 +2219,68 @@ async function loadAdminDashboard () {
       .join('')
   }
 
+  renderWardLeaderboard(complaints)
   renderAdminTable(complaints)
+}
+
+/* ========================================================
+   WARD-WISE MUNICIPAL PERFORMANCE LEADERBOARD
+======================================================== */
+function renderWardLeaderboard (complaints = []) {
+  const container = document.getElementById('wardRankingContainer')
+  if (!container) return
+
+  const wards = [
+    { name: 'Ward 1 - Central Zone', code: 'Ward 1', officer: 'Er. R. Sharma' },
+    { name: 'Ward 2 - North Zone', code: 'Ward 2', officer: 'Er. P. Verma' },
+    { name: 'Ward 3 - East Zone', code: 'Ward 3', officer: 'Er. A. Gupta' },
+    { name: 'Ward 4 - West Zone', code: 'Ward 4', officer: 'Er. S. Malhotra' },
+    { name: 'Ward 5 - South Zone', code: 'Ward 5', officer: 'Er. K. Singh' }
+  ]
+
+  const stats = wards.map(w => {
+    const inWard = complaints.filter(c => (c.ward || '').toLowerCase().includes(w.code.toLowerCase()))
+    const total = inWard.length
+    const resolved = inWard.filter(c => c.status === 'Resolved' || c.status === 'Closed').length
+    const active = total - resolved
+    const rate = total > 0 ? Math.round((resolved / total) * 100) : 100
+    const overdue = inWard.filter(c => {
+      if (c.status === 'Resolved' || c.status === 'Closed') return false
+      const deadline = c.slaDeadline ? new Date(c.slaDeadline).getTime() : (new Date(c.createdAt || Date.now()).getTime() + (c.slaHours || 48) * 3600000)
+      return deadline < Date.now() || c.isEscalated
+    }).length
+    return { ...w, total, resolved, active, rate, overdue }
+  })
+
+  // Sort by resolution rate descending
+  stats.sort((a, b) => b.rate - a.rate || b.resolved - a.resolved)
+
+  container.innerHTML = stats.map((w, idx) => {
+    const rankBadge = idx === 0 ? '<span class="ward-rank rank-1"><i class="fas fa-crown"></i> #1 Rank</span>' : `<span class="ward-rank">#${idx + 1}</span>`
+    const healthClass = w.overdue > 0 ? 'health-warning' : 'health-good'
+    return `
+      <div class="ward-rank-card ${idx === 0 ? 'ward-leader' : ''}">
+        <div class="ward-card-top">
+          ${rankBadge}
+          <span class="ward-health ${healthClass}">
+            <i class="fas ${w.overdue > 0 ? 'fa-triangle-exclamation' : 'fa-circle-check'}"></i>
+            ${w.overdue > 0 ? `${w.overdue} Overdue` : 'SLA Compliant'}
+          </span>
+        </div>
+        <h4 class="ward-title">${escapeHTML(w.name)}</h4>
+        <div class="ward-officer-line"><i class="fas fa-user-shield"></i> Incharge: ${escapeHTML(w.officer)}</div>
+        <div class="ward-progress-bar-wrap">
+          <div class="ward-progress-bar" style="width: ${w.rate}%;"></div>
+        </div>
+        <div class="ward-card-metrics">
+          <div><span class="m-val">${w.rate}%</span><span class="m-lbl">Resolved</span></div>
+          <div><span class="m-val">${w.resolved}</span><span class="m-lbl">Done</span></div>
+          <div><span class="m-val">${w.active}</span><span class="m-lbl">Active</span></div>
+          <div><span class="m-val">${w.total}</span><span class="m-lbl">Total</span></div>
+        </div>
+      </div>
+    `
+  }).join('')
 }
 
 function renderAdminTable (complaints) {
@@ -2073,7 +2290,7 @@ function renderAdminTable (complaints) {
   if (complaints.length === 0) {
     table.innerHTML = `
             <tr>
-                <td colspan="7">
+                <td colspan="8">
                     <div class="empty-state">
                         <i class="fas fa-inbox"></i>
                         <p>No complaints found for this department.</p>
@@ -2105,8 +2322,9 @@ function renderAdminTable (complaints) {
                 }
             </td>
             <td><span class="category-pill">${escapeHTML(c.category)}</span></td>
+            <td><span class="ward-pill"><i class="fas fa-landmark"></i> ${escapeHTML(c.ward || 'Ward 1 - Central Zone')}</span></td>
             <td>${escapeHTML(c.location)}</td>
-            <td><span class="severity-pill sev-${(c.severity || 'Medium').toLowerCase()}">${escapeHTML(c.severity || 'Medium')}</span></td>
+            <td>${getSLABadgeHTML(c)}</td>
             <td><span class="dept-name-tag">${escapeHTML(c.department || 'Municipal')}</span></td>
             <td>
                 <div class="status-cell">
@@ -2191,13 +2409,97 @@ function getStatusOptions (current) {
 }
 
 async function updateStatus (id, newStatus) {
+  if (newStatus === 'Resolved') {
+    promptResolutionProof(id)
+    return
+  }
+  await executeStatusUpdate(id, newStatus)
+}
+
+/* ========================================================
+   BEFORE VS AFTER RESOLUTION PROOF ATTACHMENT
+======================================================== */
+function promptResolutionProof (id) {
+  openModal(`
+    <div style="padding: 10px 0;">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); color: #10b981; display: grid; place-items: center; font-size: 24px; margin: 0 auto 16px;">
+        <i class="fas fa-camera"></i>
+      </div>
+      <h2 style="margin-bottom: 8px; text-align: center;">Upload Work Done Proof (समाधान प्रमाण)</h2>
+      <p style="color: var(--text-muted); font-size: 13.5px; margin-bottom: 18px; text-align: center; line-height: 1.5;">
+        Attach on-site photo evidence proving grievance #${escapeHTML(id)} has been completely resolved.
+      </p>
+
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text);">
+          Upload Resolution Proof Photo
+        </label>
+        <input
+          type="file"
+          id="resolutionProofFileInput"
+          accept="image/*"
+          onchange="previewResolutionProof(event)"
+          style="width: 100%; padding: 8px; font-size: 13px;"
+        />
+        <div id="resolutionProofPreview" style="margin-top: 10px; text-align: center;"></div>
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+        <button class="btn secondary" onclick="closeModal({ target: { id: 'modalOverlay' } }); executeStatusUpdate('${escapeHTML(id)}', 'Resolved', null);">
+          Skip Photo &amp; Resolve
+        </button>
+        <button class="btn primary" onclick="submitResolutionProof('${escapeHTML(id)}')">
+          <i class="fas fa-check-circle"></i> Save Proof &amp; Resolve
+        </button>
+      </div>
+    </div>
+  `)
+}
+
+function previewResolutionProof (event) {
+  const file = event.target.files && event.target.files[0]
+  const preview = document.getElementById('resolutionProofPreview')
+  if (!preview) return
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = e => {
+      preview.innerHTML = `<img src="${e.target.result}" style="max-height: 140px; border-radius: 8px; border: 1px solid var(--border);" />`
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+async function submitResolutionProof (id) {
+  const fileInput = document.getElementById('resolutionProofFileInput')
+  let resolvedImageUrl = null
+
+  if (fileInput && fileInput.files && fileInput.files.length > 0) {
+    const file = fileInput.files[0]
+    resolvedImageUrl = await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onload = e => resolve(e.target.result)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(file)
+    })
+  }
+
+  closeModal({ target: { id: 'modalOverlay' } })
+  executeStatusUpdate(id, 'Resolved', resolvedImageUrl)
+}
+
+async function executeStatusUpdate (id, newStatus, resolvedImageUrl = null) {
+  const payload = {
+    status: newStatus,
+    note: `Status updated to ${newStatus}.`
+  }
+  if (resolvedImageUrl) {
+    payload.resolvedImageUrl = resolvedImageUrl
+  }
+
   // 1. Call Backend API
   const res = await apiFetch(`/complaints/${encodeURIComponent(id)}/status`, {
     method: 'PATCH',
-    body: JSON.stringify({
-      status: newStatus,
-      note: `Status updated to ${newStatus}.`
-    })
+    body: JSON.stringify(payload)
   })
 
   if (res && res.success) {
@@ -2212,6 +2514,7 @@ async function updateStatus (id, newStatus) {
     const c = complaints.find(x => (x.id || x.complaintId) === id)
     if (c) {
       c.status = newStatus
+      if (resolvedImageUrl) c.resolvedImageUrl = resolvedImageUrl
       if (!c.history) c.history = []
       c.history.push({ status: newStatus, date: new Date().toLocaleString() })
       saveComplaints(complaints)
@@ -2396,20 +2699,44 @@ function viewComplaint (id) {
         <h2><i class="fas fa-file-alt"></i> Complaint Details</h2>
         <p><strong>ID:</strong> ${escapeHTML(compId)}</p>
         <p><strong>User:</strong> ${escapeHTML(c.userName || c.citizenName || c.user || 'Citizen')}</p>
+        <p><strong>Ward / Zone:</strong> <span class="ward-pill"><i class="fas fa-landmark"></i> ${escapeHTML(c.ward || 'Ward 1 - Central Zone')}</span></p>
         <p><strong>Category:</strong> ${escapeHTML(c.category)}</p>
         <p><strong>Description:</strong> ${escapeHTML(c.description)}</p>
         <p><strong>Location:</strong> ${escapeHTML(c.location)}</p>
         <p><strong>Severity:</strong> ${escapeHTML(c.severity)}</p>
         <p><strong>Department:</strong> ${escapeHTML(c.department)}</p>
+        <p><strong>SLA Deadline:</strong> ${getSLABadgeHTML(c)}</p>
         <p><strong>Status:</strong> ${escapeHTML(c.status)}</p>
+        ${c.reopenCount > 0 ? `<p style="color:#f59e0b;font-weight:600;"><i class="fas fa-rotate-left"></i> Re-Opened by Citizen: ${c.reopenCount} time(s) - Escalated to Senior Commissioner</p>` : ''}
         <p><strong>Upvotes:</strong> ${c.upvotes || 0}</p>
         <p><strong>Created:</strong> ${escapeHTML(c.createdAt)}</p>
-        ${
-          c.image
-            ? `<img src="${c.image}" alt="Complaint Image" onclick="openLightbox('${c.image}')">`
-            : ''
-        }
-        <p><strong>Mobile (Alerts):</strong> ${escapeHTML(c.citizenPhone || 'Not Provided')}</p>
+        
+        <!-- Before vs After Photo Proof in Officer Modal -->
+        <div class="before-after-card" style="margin-top:14px;">
+          <div class="before-after-header">
+            <h4><i class="fas fa-camera-retro"></i> Grievance Verification &amp; Resolution Proof</h4>
+          </div>
+          <div class="before-after-grid">
+            <div class="photo-box photo-before">
+              <div class="photo-tag tag-before"><i class="fas fa-user"></i> Citizen Report</div>
+              ${c.image ? `
+                <img src="${escapeHTML(c.image)}" alt="Report Photo" onclick="openLightbox('${c.image}')" />
+              ` : `
+                <div class="no-photo-placeholder"><i class="fas fa-image"></i><span>No photo provided</span></div>
+              `}
+            </div>
+            <div class="photo-box photo-after">
+              <div class="photo-tag tag-after"><i class="fas fa-certificate"></i> Resolution Proof</div>
+              ${c.resolvedImageUrl ? `
+                <img src="${escapeHTML(c.resolvedImageUrl)}" alt="Resolution Proof" onclick="openLightbox('${c.resolvedImageUrl}')" />
+              ` : `
+                <div class="no-photo-placeholder"><i class="fas fa-tools"></i><span>${c.status === 'Resolved' || c.status === 'Closed' ? 'Resolution certified on-site' : 'Awaiting officer proof upload'}</span></div>
+              `}
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: 12px;"><strong>Mobile (Alerts):</strong> ${escapeHTML(c.citizenPhone || 'Not Provided')}</p>
         <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
             <button class="btn btn-wa-send full" onclick="closeModal({target:{id:'modalOverlay'}}); openNotifyModal('${escapeHTML(compId)}');">
                 <i class="fab fa-whatsapp"></i> Send WhatsApp / SMS Alert

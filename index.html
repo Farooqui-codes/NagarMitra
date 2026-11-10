@@ -1601,6 +1601,18 @@
                 autocomplete="country-name"
               />
             </div>
+
+            <div class="loc-field-group full-width">
+              <label for="locWard"><i class="fas fa-landmark" style="color: #0284c7;"></i> Municipal Ward / Zone *</label>
+              <select id="locWard" name="locWard" required>
+                <option value="">Select Municipal Ward</option>
+                <option value="Ward 1 - Central Zone">Ward 1 - Central Zone (Connaught Place / Civil Lines)</option>
+                <option value="Ward 2 - North Zone">Ward 2 - North Zone (Model Town / Shalimar)</option>
+                <option value="Ward 3 - East Zone">Ward 3 - East Zone (Mayur Vihar / Laxmi Nagar)</option>
+                <option value="Ward 4 - West Zone">Ward 4 - West Zone (Janakpuri / Rajouri Garden)</option>
+                <option value="Ward 5 - South Zone">Ward 5 - South Zone (Hauz Khas / Saket)</option>
+              </select>
+            </div>
           </div>
 
           <!-- Hidden combined location input for backend API compatibility -->
@@ -1725,6 +1737,27 @@
       <!-- Mini chart by category -->
       <div class="admin-insights" id="adminInsights"></div>
 
+      <!-- Government Executive Toolbar: Ward Leaderboard & Commissioner Audit Report -->
+      <div class="gov-executive-toolbar">
+        <div class="gov-toolbar-header">
+          <div class="gov-toolbar-title">
+            <span class="gov-badge-official"><i class="fas fa-shield-halved"></i> MUNICIPAL COMMAND CENTER</span>
+            <h3>Ward Redressal Performance &amp; SLA Compliance Leaderboard</h3>
+            <p>Live inter-ward efficiency ranking and municipal audit metrics</p>
+          </div>
+          <button
+            class="btn-commissioner-report"
+            onclick="downloadCommissionerAuditReport()"
+            title="Generate Official Audit PDF for Municipal Commissioner"
+          >
+            <i class="fas fa-file-pdf"></i> Download Commissioner Audit Report (PDF)
+          </button>
+        </div>
+        <div class="ward-ranking-container" id="wardRankingContainer">
+          <!-- Populated dynamically by renderWardLeaderboard() -->
+        </div>
+      </div>
+
       <div class="admin-table-container">
         <div class="table-header">
           <h2 id="adminTableHeading"><i class="fas fa-table-list"></i> All Complaints</h2>
@@ -1771,8 +1804,9 @@
               <tr>
                 <th>ID</th>
                 <th>Category</th>
+                <th>Ward / Zone</th>
                 <th>Location</th>
-                <th>Severity</th>
+                <th>SLA Countdown</th>
                 <th>Department</th>
                 <th>Status</th>
                 <th>Action</th>

@@ -63,8 +63,43 @@ const complaintSchema = new mongoose.Schema({
         enum: ['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved', 'Rejected'],
         default: 'Submitted'
     },
-    // Unified image field — 'image' duplicate removed
+    // Unified image field (Before photo)
     imageUrl: {
+        type: String,
+        default: ''
+    },
+    // Official Resolution Proof (After photo uploaded by Department Officer)
+    resolvedImageUrl: {
+        type: String,
+        default: ''
+    },
+    // Municipal Ward Assignment
+    ward: {
+        type: String,
+        default: 'Ward 1 - Central'
+    },
+    // SLA Management & Automatic Escalation
+    slaHours: {
+        type: Number,
+        default: 48
+    },
+    slaDeadline: {
+        type: Date
+    },
+    isEscalated: {
+        type: Boolean,
+        default: false
+    },
+    // Citizen Resolution Feedback & Re-opening
+    reopenCount: {
+        type: Number,
+        default: 0
+    },
+    citizenRating: {
+        type: Number,
+        default: 0
+    },
+    citizenFeedback: {
         type: String,
         default: ''
     },

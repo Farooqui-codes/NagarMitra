@@ -33,6 +33,31 @@ const findComplaint = async (id) => {
            Complaint.findOne({ complaintId: id });
 };
 
+// ─── Government SLA Calculator (Hours according to citizen charter) ─────────
+const calculateSLA = (category = '', severity = 'Medium') => {
+    const cat = String(category).toLowerCase();
+    const sev = String(severity).toLowerCase();
+    if (sev === 'critical') return 12;
+    if (cat.includes('garbage') || cat.includes('sanitation') || cat.includes('waste')) return 24;
+    if (cat.includes('water') || cat.includes('sewage') || cat.includes('drain')) return 36;
+    if (cat.includes('pothole') || cat.includes('road')) return 48;
+    if (cat.includes('light') || cat.includes('electrical')) return 72;
+    if (sev === 'high') return 36;
+    return 48;
+};
+
+// ─── Municipal Ward Assignment Helper ─────────────────────────────────────────
+const assignWard = (location = '', pincode = '') => {
+    const loc = String(location).toLowerCase();
+    if (loc.includes('north') || loc.includes('sector 1') || loc.includes('ward 1')) return 'Ward 1 - North Zone';
+    if (loc.includes('south') || loc.includes('sector 2') || loc.includes('ward 2')) return 'Ward 2 - South Zone';
+    if (loc.includes('east') || loc.includes('sector 3') || loc.includes('ward 3')) return 'Ward 3 - East Zone';
+    if (loc.includes('west') || loc.includes('sector 4') || loc.includes('ward 4')) return 'Ward 4 - West Zone';
+    const digits = (pincode || location).replace(/\D/g, '');
+    const wardNum = digits ? (parseInt(digits.slice(-2), 10) % 5) + 1 : 1;
+    return `Ward ${wardNum} - Municipal Zone`;
+};
+
 // ─── DB availability guard ───────────────────────────────────────────────────
 const dbUnavailable = (res) => res.status(503).json({
     success: false,
@@ -67,6 +92,11 @@ exports.createComplaint = async (req, res) => {
             });
         }
 
+        // SLA Calculation (Government citizen charter)
+        const slaHours = calculateSLA(category, severity);
+        const slaDeadline = new Date(Date.now() + slaHours * 3600 * 1000);
+        const ward = sanitize(req.body.ward) || assignWard(location, req.body.pincode);
+
         // Sanitize all text inputs against XSS
         const complaintData = {
             complaintId:   await generateSequentialComplaintId(),
@@ -77,6 +107,11 @@ exports.createComplaint = async (req, res) => {
             severity:      severity || 'Medium',
             department:    sanitize(department) || 'Public Infrastructure Department',
             imageUrl:      imageUrl || '',
+            ward:          ward,
+            slaHours:      slaHours,
+            slaDeadline:   slaDeadline,
+            isEscalated:   false,
+            resolvedImageUrl: '',
             citizenName:   sanitize(req.body.citizenName) || (req.user ? sanitize(req.user.name) : 'Anonymous Citizen'),
             citizenEmail:  (req.body.citizenEmail ? String(req.body.citizenEmail).toLowerCase().trim() : '') || (req.user ? req.user.email.toLowerCase() : ''),
             citizenPhone:  sanitize(req.body.citizenPhone) || (req.user ? (req.user.phone || '') : ''),
@@ -300,6 +335,9 @@ exports.updateStatus = async (req, res) => {
         }
 
         complaint.status = status || complaint.status;
+        if (req.body.resolvedImageUrl) {
+            complaint.resolvedImageUrl = req.body.resolvedImageUrl;
+        }
 
         const officerName = req.user ? sanitize(req.user.name) : 'Municipal Authority';
         const officerRole = req.user && req.user.role === 'department_officer'
@@ -510,5 +548,80 @@ exports.exportCSV = async (req, res) => {
     } catch (error) {
         console.error('Export CSV Error:', error);
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Citizen re-opens grievance if resolution was unsatisfactory
+// @route   POST /api/complaints/:id/reopen
+// @access  Public / Citizen
+// ─────────────────────────────────────────────────────────────────────────────
+exports.reopenComplaint = async (req, res) => {
+    try {
+        if (!isDbConnected()) return dbUnavailable(res);
+
+        const { reason } = req.body;
+        const complaint = await findComplaint(req.params.id);
+
+        if (!complaint) {
+            return res.status(404).json({ success: false, message: 'Complaint not found' });
+        }
+
+        const citizenName = req.user ? sanitize(req.user.name) : (complaint.citizenName || 'Citizen');
+
+        complaint.status = 'Under Review';
+        complaint.reopenCount = (complaint.reopenCount || 0) + 1;
+        complaint.isEscalated = true; // Automatically mark escalated to Senior Authority
+
+        complaint.statusHistory.push({
+            status:      'Under Review',
+            changedAt:   new Date(),
+            changedBy:   `Citizen: ${citizenName} (Re-Opened #${complaint.reopenCount})`,
+            note:        sanitize(reason) || 'Citizen reported issue was not satisfactorily resolved.',
+            notifiedVia: 'Citizen Re-Open Action'
+        });
+
+        await complaint.save();
+
+        res.json({
+            success: true,
+            message: 'Grievance re-opened and escalated to Senior Municipal Commissioner for immediate re-inspection.',
+            data: complaint,
+            complaint
+        });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Citizen feedback & rating (1 to 5 stars)
+// @route   POST /api/complaints/:id/feedback
+// @access  Public / Citizen
+// ─────────────────────────────────────────────────────────────────────────────
+exports.rateComplaint = async (req, res) => {
+    try {
+        if (!isDbConnected()) return dbUnavailable(res);
+
+        const { rating, feedback } = req.body;
+        const complaint = await findComplaint(req.params.id);
+
+        if (!complaint) {
+            return res.status(404).json({ success: false, message: 'Complaint not found' });
+        }
+
+        const parsedRating = Math.max(1, Math.min(5, parseInt(rating, 10) || 5));
+        complaint.citizenRating = parsedRating;
+        if (feedback) complaint.citizenFeedback = sanitize(feedback);
+
+        await complaint.save();
+
+        res.json({
+            success: true,
+            message: 'Thank you for your valuable feedback!',
+            data: complaint
+        });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
     }
 };

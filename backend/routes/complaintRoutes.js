@@ -7,7 +7,9 @@ const {
     updateStatus,
     upvoteComplaint,
     deleteComplaint,
-    exportCSV
+    exportCSV,
+    reopenComplaint,
+    rateComplaint
 } = require('../controllers/complaintController');
 const { protect, authorize, optionalAuth } = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
@@ -30,6 +32,10 @@ router.delete('/:id', protect, deleteComplaint);
 
 // Admin & Department Officer status change
 router.patch('/:id/status', protect, authorize('admin', 'department_officer'), updateStatus);
+
+// Citizen Re-opening & Feedback
+router.post('/:id/reopen', optionalAuth, reopenComplaint);
+router.post('/:id/feedback', optionalAuth, rateComplaint);
 
 // Upvoting
 router.post('/:id/upvote', optionalAuth, upvoteComplaint);
