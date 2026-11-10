@@ -899,8 +899,7 @@ textarea {
 
 .page.active {
     display: block;
-    opacity: 1;
-    transform: none;
+    animation: smoothFadeUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes fadeInUp {
@@ -5024,13 +5023,21 @@ body[data-theme="light"] .dev-gh {
     }
 }
 
-/* Instant, Zero-Delay Display for All Page Sections & Cards */
-.page.active .hero-content,
-.page.active .problem-card,
+/* Apply silky smooth, GPU-composited animations */
+.page.active .hero-content {
+    animation: smoothFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.page.active .problem-card {
+    animation: smoothFadeUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .page.active .stat-card {
-    opacity: 1 !important;
-    transform: none !important;
-    animation: none !important;
+    animation: smoothFadeUp 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.page.active .step-card {
+    animation: smoothFadeUp 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .admin-table-container,
@@ -5044,9 +5051,9 @@ body[data-theme="light"] .dev-gh {
 }
 
 /* Micro-interaction transitions (Hardware Accelerated) */
-.btn, .nav-btn, .problem-card, .stat-card, .demo-pill, .notif-btn {
+.btn, .nav-btn, .problem-card, .stat-card, .demo-pill, .notif-btn, .step-card {
     will-change: transform;
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, background 0.22s ease, border-color 0.22s ease;
 }
 
 .admin-complaint-row:hover {
