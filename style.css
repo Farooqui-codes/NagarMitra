@@ -4054,18 +4054,23 @@ body[data-theme="light"] .dev-gh {
     position: fixed;
     bottom: 28px;
     left: 28px;
-    width: 56px;
-    height: 56px;
+    width: 54px;
+    height: 54px;
+    max-width: 54px;
+    max-height: 54px;
+    aspect-ratio: 1 / 1;
     border-radius: 50%;
     background: #25d366;
     color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 26px;
     box-shadow: 0 8px 24px rgba(37, 211, 102, 0.4);
     z-index: 999;
     text-decoration: none;
+    flex-shrink: 0;
+    box-sizing: border-box;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -4409,21 +4414,59 @@ body[data-theme="light"] .dev-gh {
     }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 768px) {
     .floating-whatsapp-btn {
-        bottom: 20px;
-        left: 18px;
-        width: 50px;
-        height: 50px;
-        font-size: 24px;
+        bottom: 20px !important;
+        left: 18px !important;
+        width: 48px !important;
+        height: 48px !important;
+        max-width: 48px !important;
+        max-height: 48px !important;
+        min-width: 48px !important;
+        min-height: 48px !important;
+        font-size: 23px !important;
+        border-radius: 50% !important;
+        flex-shrink: 0 !important;
     }
 
     .floating-call-btn {
-        bottom: 80px;
-        left: 18px;
-        width: 50px;
-        height: 50px;
-        font-size: 21px;
+        bottom: 78px !important;
+        left: 18px !important;
+        width: 48px !important;
+        height: 48px !important;
+        max-width: 48px !important;
+        max-height: 48px !important;
+        min-width: 48px !important;
+        min-height: 48px !important;
+        font-size: 20px !important;
+        border-radius: 50% !important;
+        flex-shrink: 0 !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .floating-whatsapp-btn {
+        bottom: 18px !important;
+        left: 16px !important;
+        width: 46px !important;
+        height: 46px !important;
+        max-width: 46px !important;
+        max-height: 46px !important;
+        min-width: 46px !important;
+        min-height: 46px !important;
+        font-size: 22px !important;
+    }
+
+    .floating-call-btn {
+        bottom: 74px !important;
+        left: 16px !important;
+        width: 46px !important;
+        height: 46px !important;
+        max-width: 46px !important;
+        max-height: 46px !important;
+        min-width: 46px !important;
+        min-height: 46px !important;
+        font-size: 19px !important;
     }
 
     .emergency-hub-box {
@@ -4565,20 +4608,62 @@ body[data-theme="light"] .dev-gh {
     margin: 10px 0;
 }
 
-.btn-pick-map.active {
-    background: #ea580c !important;
-    color: white !important;
-    border-color: #ea580c !important;
-    animation: pwaPulse 1.5s infinite;
-}
-
-.lang-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 12px;
+/* ==================== DEDICATED LANGUAGE TOGGLE ==================== */
+.lang-toggle-btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 20px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    color: var(--primary);
     font-size: 13px;
     font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    line-height: 1;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+.lang-toggle-btn:hover {
+    background: var(--primary-gradient);
+    color: #ffffff;
+    border-color: transparent;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px var(--shadow);
+}
+
+.lang-toggle-btn i {
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.mobile-tool-btn.wa-tool {
+    max-width: 130px;
+    white-space: nowrap;
+}
+
+.social-btn.social-whatsapp {
+    width: 38px !important;
+    height: 38px !important;
+    max-width: 38px !important;
+    border-radius: 50% !important;
+    flex-shrink: 0 !important;
+}
+
+@media (max-width: 992px) {
+    .lang-toggle-btn {
+        height: 36px;
+        padding: 0 11px;
+        font-size: 12px;
+        gap: 5px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -4588,8 +4673,13 @@ body[data-theme="light"] .dev-gh {
     .loc-field-group.full-width {
         grid-column: span 1;
     }
-    .city-map-container {
-        height: 350px;
+}
+
+@media (max-width: 480px) {
+    .lang-toggle-btn {
+        height: 34px;
+        padding: 0 8px;
+        font-size: 11px;
     }
 }
 

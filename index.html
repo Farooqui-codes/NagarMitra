@@ -388,7 +388,7 @@
           </div>
         </div>
         <button
-          class="theme-toggle lang-toggle"
+          class="lang-toggle-btn"
           id="langToggleBtn"
           onclick="toggleLanguage()"
           title="Switch Language / भाषा बदलें"
@@ -756,33 +756,6 @@
           <h3>Other Civic Issues</h3>
           <p>Report any other public problem</p>
         </div>
-      </div>
-
-      <!-- ================= LIVE INTERACTIVE CITY GRIEVANCE MAP ================= -->
-      <div class="city-map-section" id="cityMapSection">
-        <div class="section-title">
-          <span id="cityMapTag">LIVE COMPLAINTS RADAR</span>
-          <h2 id="cityMapTitle">Live City Grievance Map</h2>
-          <p id="cityMapSub">
-            View all reported municipal problems across the city in real-time with color-coded status pins.
-          </p>
-        </div>
-
-        <div class="map-controls">
-          <div class="map-legend">
-            <span class="legend-item"><span class="legend-dot red"></span> Submitted</span>
-            <span class="legend-item"><span class="legend-dot yellow"></span> In Progress</span>
-            <span class="legend-item"><span class="legend-dot green"></span> Resolved</span>
-          </div>
-          <div class="map-filter-buttons">
-            <button class="map-filter-btn active" data-status="all" onclick="filterMapMarkers('all')">All Complaints</button>
-            <button class="map-filter-btn" data-status="Submitted" onclick="filterMapMarkers('Submitted')">Submitted</button>
-            <button class="map-filter-btn" data-status="In Progress" onclick="filterMapMarkers('In Progress')">In Progress</button>
-            <button class="map-filter-btn" data-status="Resolved" onclick="filterMapMarkers('Resolved')">Resolved</button>
-          </div>
-        </div>
-
-        <div id="cityMap" class="city-map-container" data-pick-mode="false"></div>
       </div>
 
       <div class="info-section">
@@ -1581,11 +1554,8 @@
 
           <!-- Location Action Buttons Row -->
           <div class="location-actions-row">
-            <button type="button" class="location-btn" onclick="getLocation()" style="flex: 1;">
+            <button type="button" class="location-btn" onclick="getLocation()" style="width: 100%; justify-content: center;">
               <i class="fas fa-crosshairs"></i> Auto-Fill My Current Location
-            </button>
-            <button type="button" class="btn secondary btn-pick-map" id="btnPickMap" onclick="toggleMapPickMode()" style="padding: 10px 16px; font-size: 13px;">
-              <i class="fas fa-map-marked-alt"></i> Pick Location on Map
             </button>
           </div>
 

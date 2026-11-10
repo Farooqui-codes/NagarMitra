@@ -1315,6 +1315,18 @@ async function submitComplaint (event) {
 
   if (backendRes && backendRes.success && backendRes.data) {
     const createdComplaint = normalizeComplaint(backendRes.data)
+    window._lastSubmittedComplaint = createdComplaint
+    try {
+      const existing = getComplaints()
+      const compId = createdComplaint.id || createdComplaint.complaintId
+      const idx = existing.findIndex(x => (x.id || x.complaintId) === compId)
+      if (idx >= 0) {
+        existing[idx] = createdComplaint
+      } else {
+        existing.unshift(createdComplaint)
+      }
+      saveComplaints(existing)
+    } catch (e) {}
     clearDraft()
     finishSubmission(createdComplaint)
     return

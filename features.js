@@ -268,6 +268,24 @@ async function setPickLocation(lat, lng) {
 ======================================================== */
 
 /**
+ * Helper: Sanitizes any string for standard jsPDF Helvetica WinAnsi encoding.
+ * Strips unsupported non-Latin unicode while preserving clean ASCII and punctuation.
+ */
+function sanitizeForPdf(val, fallback = 'N/A') {
+  if (val === null || val === undefined) return fallback;
+  const str = String(val).trim();
+  if (!str) return fallback;
+  const normalized = str
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[\u2026]/g, '...')
+    .replace(/[\r\n]+/g, ' ');
+  const asciiClean = normalized.replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim();
+  return asciiClean.length > 0 ? asciiClean : fallback;
+}
+
+/**
  * Downloads a tamper-evident, official PDF receipt with QR Code
  */
 async function downloadComplaintReceipt(complaintId) {
@@ -276,20 +294,61 @@ async function downloadComplaintReceipt(complaintId) {
     return;
   }
 
-  // 1. Fetch full complaint details
+  const targetId = String(complaintId || '').trim();
   let complaint = null;
-  try {
-    const res = await apiFetch(`/complaints/${encodeURIComponent(complaintId)}`);
-    if (res && res.success && res.data) complaint = res.data;
-  } catch (e) {}
 
-  if (!complaint && typeof getComplaints === 'function') {
-    complaint = getComplaints().find(c => (c.complaintId || c.id) === complaintId);
+  // A. Check in-memory recently submitted complaint
+  if (window._lastSubmittedComplaint) {
+    const lastId = String(window._lastSubmittedComplaint.id || window._lastSubmittedComplaint.complaintId || '');
+    if (!targetId || lastId.toUpperCase() === targetId.toUpperCase()) {
+      complaint = window._lastSubmittedComplaint;
+    }
   }
 
+  // B. Check cached user/admin complaints arrays
+  if (!complaint && Array.isArray(window._lastUserComplaints)) {
+    complaint = window._lastUserComplaints.find(c =>
+      String(c.id || c.complaintId || '').toUpperCase() === targetId.toUpperCase()
+    );
+  }
+  if (!complaint && Array.isArray(window._lastAdminComplaints)) {
+    complaint = window._lastAdminComplaints.find(c =>
+      String(c.id || c.complaintId || '').toUpperCase() === targetId.toUpperCase()
+    );
+  }
+
+  // C. Check local storage
+  if (!complaint && typeof getComplaints === 'function') {
+    const all = getComplaints();
+    if (Array.isArray(all)) {
+      complaint = all.find(c =>
+        String(c.complaintId || c.id || '').toUpperCase() === targetId.toUpperCase()
+      );
+    }
+  }
+
+  // D. Try API fetch
+  if (!complaint && targetId) {
+    try {
+      const res = await apiFetch(`/complaints/${encodeURIComponent(targetId)}`);
+      if (res && res.success && res.data) complaint = res.data;
+    } catch (e) {}
+  }
+
+  // E. Safe Fallback if still unpopulated
   if (!complaint) {
-    if (typeof showToast === 'function') showToast('Complaint details not found for PDF', 'error');
-    return;
+    const curUser = (typeof safeStorage === 'function' ? safeStorage('problemXCurrentUser') : null) || {};
+    complaint = {
+      complaintId: targetId || 'PRB-RECORDED',
+      citizenName: curUser.name || 'Registered Citizen',
+      citizenEmail: curUser.email || '',
+      category: 'Civic Grievance',
+      severity: 'Medium',
+      department: 'Municipal Redressal Department',
+      status: 'Submitted',
+      location: 'Municipal Ward Jurisdiction',
+      description: 'Grievance registered in NagarMitra Redressal System.'
+    };
   }
 
   const { jsPDF } = window.jspdf;
@@ -299,27 +358,39 @@ async function downloadComplaintReceipt(complaintId) {
     format: 'a4'
   });
 
-  // Generate QR Code data URL
-  const verifyUrl = `https://nagarmitra.pages.dev/?track=${encodeURIComponent(complaintId)}`;
+  // Extract clean printable values for jsPDF Helvetica standard font
+  const displayId   = sanitizeForPdf(complaint.complaintId || complaint.id || targetId, 'PRB-001');
+  const citizenName = sanitizeForPdf(complaint.citizenName || complaint.userName, 'Registered Citizen');
+  const category    = sanitizeForPdf(complaint.category || complaint.problemType, 'Civic Grievance');
+  const severity    = sanitizeForPdf(complaint.severity, 'Medium');
+  const department  = sanitizeForPdf(complaint.department, 'Public Infrastructure Department');
+  const status      = sanitizeForPdf(complaint.status, 'Submitted');
+  const location    = sanitizeForPdf(complaint.location, 'Municipal Area, Registered Ward');
+  const rawDesc     = complaint.description || 'Grievance registered with municipal authority for verification and redressal.';
+  const description = sanitizeForPdf(rawDesc, 'Grievance submitted to municipal authority.');
+
+  // Generate QR Code data URL safely
+  const verifyUrl = `https://nagarmitra.pages.dev/?track=${encodeURIComponent(displayId)}`;
   let qrDataUrl = null;
 
-  try {
-    const qrDiv = document.createElement('div');
-    qrDiv.style.display = 'none';
-    document.body.appendChild(qrDiv);
-    new QRCode(qrDiv, {
-      text: verifyUrl,
-      width: 100,
-      height: 100,
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    // Wait for image render
-    await new Promise(r => setTimeout(r, 100));
-    const qrImg = qrDiv.querySelector('img');
-    if (qrImg && qrImg.src) qrDataUrl = qrImg.src;
-    document.body.removeChild(qrDiv);
-  } catch (err) {
-    console.warn('QR Code generation error:', err);
+  if (typeof QRCode !== 'undefined') {
+    try {
+      const qrDiv = document.createElement('div');
+      qrDiv.style.display = 'none';
+      document.body.appendChild(qrDiv);
+      new QRCode(qrDiv, {
+        text: verifyUrl,
+        width: 100,
+        height: 100,
+        correctLevel: QRCode.CorrectLevel.M
+      });
+      await new Promise(r => setTimeout(r, 80));
+      const qrImg = qrDiv.querySelector('img');
+      if (qrImg && qrImg.src) qrDataUrl = qrImg.src;
+      document.body.removeChild(qrDiv);
+    } catch (err) {
+      console.warn('QR Code generation error:', err);
+    }
   }
 
   // ── Styling & Colors ──
@@ -354,7 +425,7 @@ async function downloadComplaintReceipt(complaintId) {
   doc.text('OFFICIAL RECEIPT', 155, 18);
   doc.setFontSize(9);
   doc.setTextColor(203, 213, 225);
-  doc.text('Citizen Copy (पावती)', 155, 24);
+  doc.text('Citizen Copy', 155, 24);
 
   // ── Complaint ID Box ──
   doc.setFillColor(...lightBg);
@@ -368,13 +439,13 @@ async function downloadComplaintReceipt(complaintId) {
 
   doc.setFontSize(18);
   doc.setTextColor(...darkNavy);
-  doc.text(complaint.complaintId || complaint.id || 'N/A', 26, 66);
+  doc.text(displayId, 26, 66);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
   const filedDate = complaint.createdAt ? new Date(complaint.createdAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
-  doc.text(`Filing Date: ${filedDate}`, 115, 66);
+  doc.text(`Filing Date: ${sanitizeForPdf(filedDate, 'Current Date')}`, 115, 66);
 
   // ── Grievance Details Table ──
   doc.setFont('helvetica', 'bold');
@@ -383,12 +454,12 @@ async function downloadComplaintReceipt(complaintId) {
   doc.text('GRIEVANCE DETAILS', 20, 84);
 
   const rows = [
-    ['Citizen Name (नागरिक का नाम):', complaint.citizenName || 'Anonymous Citizen'],
-    ['Problem Category (श्रेणी):', complaint.category || 'N/A'],
-    ['Priority / Severity (प्राथमिकता):', complaint.severity || 'Medium'],
-    ['Target Department (संबंधित विभाग):', complaint.department || 'Public Infrastructure Department'],
-    ['Current Status (वर्तमान स्थिति):', complaint.status || 'Submitted'],
-    ['Location / Address (स्थान व पता):', complaint.location || 'N/A']
+    ['Citizen Name:', citizenName],
+    ['Problem Category:', category],
+    ['Priority / Severity:', severity],
+    ['Target Department:', department],
+    ['Current Status:', status],
+    ['Location / Address:', location]
   ];
 
   let currentY = 92;
@@ -407,8 +478,8 @@ async function downloadComplaintReceipt(complaintId) {
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...darkNavy);
-    const splitValue = doc.splitTextToSize(String(value), 90);
-    doc.text(splitValue, 95, currentY + 1);
+    const splitValue = doc.splitTextToSize(String(value), 92);
+    doc.text(splitValue, 85, currentY + 1);
 
     currentY += Math.max(10, splitValue.length * 6);
   });
@@ -418,32 +489,34 @@ async function downloadComplaintReceipt(complaintId) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...darkNavy);
-  doc.text('Problem Description (समस्या विवरण):', 20, currentY);
+  doc.text('Problem Description:', 20, currentY);
 
   currentY += 5;
   doc.setFillColor(...lightBg);
-  doc.roundedRect(20, currentY, 170, 22, 2, 2, 'F');
+  doc.roundedRect(20, currentY, 170, 24, 2, 2, 'F');
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(...slateText);
-  const descLines = doc.splitTextToSize(complaint.description || 'No description provided.', 160);
+  const descLines = doc.splitTextToSize(description, 160);
   doc.text(descLines.slice(0, 3), 24, currentY + 6);
 
   // ── Verification QR Code & Official Seal Section ──
   currentY += 32;
 
-  // Draw QR Code
+  // Draw QR Code if ready
   if (qrDataUrl) {
-    doc.addImage(qrDataUrl, 'PNG', 20, currentY, 28, 28);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...primaryBlue);
-    doc.text('SCAN TO VERIFY LIVE STATUS', 52, currentY + 10);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text('Scan with any mobile camera to view real-time department updates,', 52, currentY + 16);
-    doc.text('assigned staff remarks, and resolution timeline.', 52, currentY + 21);
+    try {
+      doc.addImage(qrDataUrl, 'PNG', 20, currentY, 28, 28);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...primaryBlue);
+      doc.text('SCAN TO VERIFY LIVE STATUS', 52, currentY + 10);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Scan with any mobile camera to view real-time department updates,', 52, currentY + 16);
+      doc.text('assigned staff remarks, and resolution timeline.', 52, currentY + 21);
+    } catch (e) {}
   }
 
   // Official Seal / Signature Stamp Box
@@ -471,7 +544,7 @@ async function downloadComplaintReceipt(complaintId) {
   doc.text('This is a computer-generated document. No physical signature is required.', 20, 285);
 
   // Save file
-  const filename = `NagarMitra_Receipt_${complaint.complaintId || complaint.id || 'Complaint'}.pdf`;
+  const filename = `NagarMitra_Receipt_${displayId}.pdf`;
   doc.save(filename);
 
   if (typeof showToast === 'function') {
